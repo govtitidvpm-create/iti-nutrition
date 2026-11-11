@@ -75,6 +75,15 @@ tr.tot td{font-weight:700;background:var(--g2)}
 .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px}
 .kpi div{background:var(--g2);border-radius:10px;padding:10px}.kpi b{display:block;font-size:22px}
 .hide{display:none!important}
+/* entry page status theme: red = attendance not marked, green = marked */
+body.st-red{background:#fdecea}body.st-green{background:#e8f6ee}
+body.st-red header{background:#b42318}body.st-green header{background:#0b6b4f}
+.card.ent{border-width:3px;transition:background .25s,border-color .25s}
+.card.ent.red{background:#fff5f4;border-color:#c0392b}.card.ent.green{background:#f1fbf5;border-color:#1a9d63}
+.estate{border-radius:10px;padding:12px 14px;font-weight:700;font-size:17px;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.estate small{font-weight:500;font-size:13px;display:block}
+.estate.red{background:#c0392b;color:#fff}.estate.green{background:#1a9d63;color:#fff}
+button.btnred{background:#c0392b}button.btngreen{background:#1a9d63}
 .notice{background:#fff3cd;border-bottom:3px solid var(--o);padding:10px 14px;font-size:15px}
 .duty{background:#fff3cd;border:2px solid var(--o)}
 .modalbg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px}
@@ -291,6 +300,7 @@ async function updateNotice(){
   else n.classList.add("hide");
 }
 async function go(){
+  document.body.classList.remove("st-red","st-green");
   await updateNotice();
   renderTabs();
   view().innerHTML=`<p class="muted">Loading…</p>`;
@@ -328,7 +338,8 @@ async function vEntry(){
   const last=ls.get("nut_last",{shift:(new Date().getHours()<12?"1":"2"),trade:TRADES[0]?.id,name:""});
   let date=today();
   view().innerHTML=`
-  <div class="card">
+  <div class="card ent red" id="eCard">
+    <div id="eState" class="estate red"></div>
     <h2>Enter today's trainee count</h2>
     ${admin?`<label>Date (office can correct any day)</label><input type="date" id="eDate" value="${date}">`:`<p class="muted">Date: <b>${dmy(date)}</b></p>`}
     <label>Shift</label>
@@ -358,6 +369,13 @@ async function vEntry(){
     $("#eNote").innerHTML=locked()?`<div class="msg err">Entry for shift ${shift} closed at ${cutoff(S,shift)}. Please contact the office.</div>`
       :`<div class="msg info">Entry for shift ${shift} closes at ${cutoff(S,shift)}.${mine?` Already submitted: <b>${mine.count}</b> by <b>${esc(mine.editedByEmail||mine.byEmail||mine.by||"?")}</b> at ${new Date(mine.at).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}. Submitting again will <b>replace</b> it.`:""}</div>`;
     $("#eSave").disabled=locked();
+    {const ok=!!mine, cls=ok?"green":"red", who=mine?(mine.editedByEmail||mine.byEmail||mine.by||""):"";
+     document.body.classList.remove("st-red","st-green"); document.body.classList.add("st-"+cls);
+     $("#eCard").className="card ent "+cls;
+     $("#eState").className="estate "+cls;
+     $("#eState").innerHTML=ok?`<span style="font-size:26px">✅</span><span>ATTENDANCE MARKED<small>${esc(trName($("#eTrade").value))} · shift ${shift} · ${mine.count} trainees${who?" · by "+esc(who):""}</small></span>`
+                              :`<span style="font-size:26px">⛔</span><span>ATTENDANCE NOT MARKED<small>${esc(trName($("#eTrade").value))} · shift ${shift} – enter the count and tap Submit</small></span>`;
+     $("#eSave").className=ok?"btngreen":"btnred"; $("#eSave").textContent=ok?"Update":"Submit";}
     const du=duty();
     $("#eDuty").innerHTML=qWarn()+(dutyHit(du,$("#eTrade").value)?`<div class="msg duty">🔔 <b>Today is your distribution day!</b><br>${esc(trName(du.trade))} – batch <b>${esc(du.code)}</b> is on distribution duty. Please open the <b>🚚 Distribution</b> tab, hand out the items and tap Complete.</div>`:"")
       +(TEST_MODE?`<p class="muted" style="font-size:12px">🧪 Test info – mode: ${DEMO?"demo":"firebase"} · selected trade id: <b>${esc($("#eTrade").value)}</b> · duty batch today: <b>${du?esc(du.code)+" ("+esc(du.trade)+")":"none"}</b> · queue front: ${esc(Q?.order?.[0]||"?")} · lastDone: ${esc(Q?.lastDone||"–")} · today: ${today()}</p>`:"");
