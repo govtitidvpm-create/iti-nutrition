@@ -94,7 +94,7 @@ tr.tot td{font-weight:700;background:var(--g2)}
 <div id="login" class="hide" style="max-width:380px;margin:40px auto">
   <div class="card">
     <h2>Sign in</h2>
-    <p class="muted">Use your Google account. Only staff approved by the office can enter data.</p>
+    <p class="muted">Sign in with your Google account to enter attendance and distribute.</p>
     <p><button id="lBtn" style="width:100%;background:#fff;color:#1f2937;border:1px solid #cbd5e1;font-size:16px;padding:12px">
       <svg width="18" height="18" viewBox="0 0 48 48" style="vertical-align:-3px;margin-right:8px"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.1 7.1-17.5z"/><path fill="#FBBC05" d="M10.5 28.7A14.5 14.5 0 0 1 9.5 24c0-1.6.3-3.2.8-4.7l-7.9-6.1A24 24 0 0 0 0 24c0 3.9.9 7.5 2.6 10.8l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.5-5.8c-2.1 1.4-4.9 2.3-8.4 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.9 6.1C6.5 42.6 14.6 48 24 48z"/></svg>Sign in with Google</button></p>
     <div id="lMsg"></div>
@@ -102,9 +102,9 @@ tr.tot td{font-weight:700;background:var(--g2)}
 </div>
 
 <div id="denied" class="hide" style="max-width:420px;margin:40px auto"><div class="card">
-  <h2>Access not granted</h2>
-  <p>You signed in as <b id="dMail"></b>, but this e-mail has not been approved yet.</p>
-  <p>Ask the office to add your e-mail under <b>Settings → Approved staff</b>, then sign in again.</p>
+  <h2>Could not open the app</h2>
+  <p>You signed in as <b id="dMail"></b>, but the database refused access.</p>
+  <p>Please tell the office. (The Firebase rules may not be published, or the Google e-mail is not verified.)</p>
   <p><button id="dOut" class="sec">Sign out / use another account</button></p></div></div>
 
 <div id="app" class="hide">
@@ -161,7 +161,7 @@ const eachDay=(a,b)=>{const out=[];let d=new Date(a+"T00:00:00");const e=new Dat
 const ls={get:(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}},set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch{}}};
 
 /* ------------------------- data layer ------------------------- */
-let DB, auth, user=null, isAdminUser=false, officeView=false;
+let DB, auth, user=null, isAdminUser=false, isStaffUser=false, officeView=false;
 const DEMO=!FIREBASE_CONFIG;
 
 async function initDB(){
@@ -179,7 +179,7 @@ async function initDB(){
       async saveQueue(q){const d=get();d.queue=q;put(d)},
       async putLog(l){const d=get();d.logs=d.logs||{};if(d.logs[l.id])throw new Error("already completed");d.logs[l.id]=l;put(d)},
       async getLogs(a,b){return Object.values(get().logs||{}).filter(l=>l.date>=a&&l.date<=b)},
-      async listStaff(){return []},async addStaff(){},async removeStaff(){},
+      async isStaff(){return true},async listStaff(){return []},async addStaff(){},async removeStaff(){},
       async addAudit(a){const d=get();d.audit=d.audit||{};d.audit[a.id]=a;put(d)},
       async getAudit(a,b){return Object.values(get().audit||{}).filter(x=>x.day>=a&&x.day<=b)}
     };
@@ -202,6 +202,7 @@ async function initDB(){
     async saveQueue(q){await F.setDoc(F.doc(fs,"dist","queue"),q)},
     async putLog(l){await F.setDoc(F.doc(fs,"distlog",l.id),l)},
     async getLogs(a,b){const q=F.query(F.collection(fs,"distlog"),F.where("date",">=",a),F.where("date","<=",b));return (await F.getDocs(q)).docs.map(d=>d.data())},
+    async isStaff(email){try{return (await F.getDoc(F.doc(fs,"staff",email))).exists()}catch(e){return false}},
     async listStaff(){return (await F.getDocs(F.query(F.collection(fs,"staff")))).docs.map(d=>d.data())},
     async addStaff(p){await F.setDoc(F.doc(fs,"staff",p.email),p)},
     async removeStaff(email){await F.deleteDoc(F.doc(fs,"staff",email))},
@@ -591,7 +592,7 @@ async function vSettings(){
    <textarea id="sTr" rows="14">${esc(S.trades)}</textarea>
    <p><button id="sSave">Save settings</button></p><div id="sMsg"></div></div>
    ${DEMO?"":`<div class="card"><h2>Approved staff</h2>
-     <p class="muted">Only these Google e-mails can sign in and enter data. The office account (set in the app and rules) is always allowed.</p>
+     <p class="muted">Anyone can sign in with Google as a normal <b>Instructor</b> (Entry, Status, Distribution – with the time limit). E-mails listed here become <b>approved staff</b> with the full office facilities (Dashboard, Reports, Settings, no time limit, staff list). The office admins are always allowed.</p>
      <div class="row"><div><label>Gmail address</label><input id="stMail" type="email" placeholder="name@gmail.com"></div><div><label>Name / trade (optional)</label><input id="stName" placeholder="e.g. COPA – Dinoj"></div></div>
      <p><button id="stAdd">Add</button></p><div id="stMsg"></div><div id="stList"></div></div>`}
    ${DEMO?`<div class="card"><h2>Demo data</h2><p class="muted">Demo mode stores data only in this browser.</p><button class="warn" id="sClr">Clear demo data</button></div>`:""}`;
@@ -637,8 +638,8 @@ function setRoleBtn(){
 async function start(){
   S=await DB.getSettings(); S.trades=S.trades.split("\n").map(l=>{const i=l.indexOf("|");const k=l.slice(0,i).trim();return LEGACY[k]?LEGACY[k]+l.slice(i):l}).join("\n"); TRADES=parseTrades(S.trades);
   $("#login").classList.add("hide"); $("#app").classList.remove("hide");
-  $("#who").textContent=user?.email||"";
-  officeView=DEMO?ls.get("nut_office",false):true;
+  $("#who").textContent=(user?.email||"")+(DEMO?"":` · ${isAdminUser?"Office":isStaffUser?"Approved staff":"Instructor"}`);
+  officeView=DEMO?ls.get("nut_office",false):isStaffUser;
   setRoleBtn(); tab=(DEMO?officeView:isAdminUser)?"dash":"entry"; go();
 }
 (async function boot(){
@@ -665,6 +666,7 @@ async function start(){
     $("#denied").classList.add("hide");
     if(!u){$("#app").classList.add("hide");$("#login").classList.remove("hide");$("#who").textContent="";return}
     isAdminUser=ADMIN_EMAILS.map(x=>x.toLowerCase()).includes((u.email||"").toLowerCase());
+    isStaffUser=isAdminUser||await DB.isStaff((u.email||"").toLowerCase());
     try{await start()}
     catch(e){
       console.error(e);
