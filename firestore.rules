@@ -2,27 +2,44 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{db}/documents {
 
-    // Office admins (same list as ADMIN_EMAILS in index.html). Always allowed.
+    // Office admins (same list as ADMIN_EMAILS in index.html). Always allowed everything.
     function admin() {
-      return request.auth != null && request.auth.token.email_verified == true &&
-             request.auth.token.email in ['dinojmkhan@gmail.com', 'govtitidvpm@gmail.com'];
+      return signedIn() && request.auth.token.email in ['dinojmkhan@gmail.com', 'govtitidvpm@gmail.com'];
     }
-    // Approved staff (listed under Settings -> Approved staff) have the same facilities as the office.
+    // Any verified Google account = normal instructor.
+    function signedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    // Approved staff (listed under Settings -> Approved staff) = full office facilities.
     function staff() {
-      return admin() || (request.auth != null && request.auth.token.email_verified == true &&
+      return admin() || (signedIn() &&
         exists(/databases/$(db)/documents/staff/$(request.auth.token.email)));
     }
+    function goodEntry() {
+      let d = request.resource.data;
+      return d.count is int && d.count >= 0 && d.count <= 200 && d.shift in ['1','2'];
+    }
 
-    match /staff/{d}    { allow read, write: if staff(); }
-    match /settings/{d} { allow read, write: if staff(); }
-    match /daily/{d}    { allow read, write: if staff(); }
-    match /dist/{d}     { allow read, write: if staff(); }
-    match /distlog/{d}  { allow read, create: if staff(); allow update, delete: if admin(); }
-    match /entries/{d}  { allow read, create, update: if staff(); allow delete: if admin(); }
+    // staff list: office/staff manage it; anyone may read ONLY their own line (so the app knows their level)
+    match /staff/{email} { allow read: if staff() || (signedIn() && request.auth.token.email == email);
+                           allow write: if staff(); }
 
-    // Audit log: staff can add lines (only under their own e-mail) and read; nobody can edit or delete.
+    // settings, item of the day: everyone reads; only office/staff change
+    match /settings/{d} { allow read: if signedIn(); allow write: if staff(); }
+    match /daily/{d}    { allow read: if signedIn(); allow write: if staff(); }
+
+    // distribution rotation + history: instructors can distribute
+    match /dist/{d}     { allow read, write: if signedIn(); }
+    match /distlog/{d}  { allow read, create: if signedIn(); allow update, delete: if admin(); }
+
+    // attendance counts: any instructor enters (valid numbers only); only admins delete
+    match /entries/{d}  { allow read: if signedIn();
+                          allow create, update: if signedIn() && goodEntry();
+                          allow delete: if admin(); }
+
+    // audit log: any signed-in user adds lines under their OWN e-mail; only office/staff read; nobody edits or deletes
     match /audit/{d}    { allow read: if staff();
-                          allow create: if staff() && request.resource.data.by == request.auth.token.email;
+                          allow create: if signedIn() && request.resource.data.by == request.auth.token.email;
                           allow update, delete: if false; }
   }
 }
