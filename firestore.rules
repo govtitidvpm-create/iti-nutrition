@@ -2,22 +2,27 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{db}/documents {
 
-    // CHANGE THIS to the office Gmail (same one as ADMIN_EMAILS in index.html)
+    // Office admins (same list as ADMIN_EMAILS in index.html). Always allowed.
     function admin() {
       return request.auth != null && request.auth.token.email_verified == true &&
-             request.auth.token.email in ['office@example.com'];
+             request.auth.token.email in ['dinojmkhan@gmail.com', 'govtitidvpm@gmail.com'];
     }
-    // approved staff = listed under Settings -> Approved staff (or the office)
+    // Approved staff (listed under Settings -> Approved staff) have the same facilities as the office.
     function staff() {
       return admin() || (request.auth != null && request.auth.token.email_verified == true &&
         exists(/databases/$(db)/documents/staff/$(request.auth.token.email)));
     }
 
-    match /staff/{d}    { allow read: if staff(); allow write: if admin(); }
-    match /settings/{d} { allow read: if staff(); allow write: if admin(); }
-    match /daily/{d}    { allow read: if staff(); allow write: if admin(); }
+    match /staff/{d}    { allow read, write: if staff(); }
+    match /settings/{d} { allow read, write: if staff(); }
+    match /daily/{d}    { allow read, write: if staff(); }
     match /dist/{d}     { allow read, write: if staff(); }
     match /distlog/{d}  { allow read, create: if staff(); allow update, delete: if admin(); }
     match /entries/{d}  { allow read, create, update: if staff(); allow delete: if admin(); }
+
+    // Audit log: staff can add lines (only under their own e-mail) and read; nobody can edit or delete.
+    match /audit/{d}    { allow read: if staff();
+                          allow create: if staff() && request.resource.data.by == request.auth.token.email;
+                          allow update, delete: if false; }
   }
 }
