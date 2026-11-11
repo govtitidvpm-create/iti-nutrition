@@ -89,7 +89,7 @@ button.btnred{background:#c0392b}button.btngreen{background:#1a9d63}
 .modalbg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px}
 .modalbox{background:#fff;border-radius:14px;max-width:420px;width:100%;padding:20px;text-align:center;border-top:6px solid var(--o)}
 .modalbox h3{margin:0 0 8px;font-size:20px}
-@media print{header,nav,.noprint,button{display:none!important}body{background:#fff}.card{border:0}}
+@media print{header,nav,.noprint,button{display:none!important}body{background:#fff}.card{border:0}body.prone .card:not(.prsel){display:none!important}}
 </style>
 </head>
 <body>
@@ -261,6 +261,12 @@ const dailyMapOf=arr=>Object.fromEntries(arr.map(d=>[d.date,d]));
 function slipText(date,sm){
   return `${S.inst}\nNUTRITION PROGRAMME – ${dmy(date)}\n\nShift 1: ${sm[1].n} trainees → Milk ${fmt(sm[1].milk)} L, ${sm.item} ${fmt(sm[1].item)}\nShift 2: ${sm[2].n} trainees → Milk ${fmt(sm[2].milk)} L, ${sm.item} ${fmt(sm[2].item)}\n\nTOTAL: ${sm.n} trainees\nMilk: ${fmt(sm.milk)} litres\n${sm.item}: ${fmt(sm.itemQty)} nos`;
 }
+
+function slipShiftText(date,sm,sh){
+  const x=sm[sh];
+  return `${S.inst}\nNUTRITION PROGRAMME – ${dmy(date)}\nSHIFT ${sh}\n\nTrainees: ${x.n}\nMilk: ${fmt(x.milk)} litres\n${sm.item}: ${fmt(x.item)} nos`;
+}
+const phoneFor=()=>S.supplierPhone;   // one supplier for both shifts
 
 /* ------------------------- views ------------------------- */
 const view=()=>$("#view");
@@ -534,14 +540,30 @@ async function vDash(){
         return [t.name,e?e.count:{html:`<span class="pill pend">pending</span>`},e?fmt(e.count*S.milkPerHead):"",e?fmt(e.count*S.itemPerHead):"",
           e?{html:`${esc(e.remarks||"")}${e.late?` <span class="pill late">late</span>`:""}`}:""]});
       rows.push({_tot:1,c:["TOTAL",sm[sh].n,fmt(sm[sh].milk),fmt(sm[sh].item),""]});
-      return `<div class="card"><h2>Shift ${sh} – ${sm[sh].subs} of ${TRADES.length} trades submitted</h2>${tbl("dash"+sh,["Trade","Trainees","Milk (L)",sm.item,"Remarks"],rows,{num:[1,2,3]})}</div>`};
+      const st=slipShiftText(date,sm,sh), pend=TRADES.length-sm[sh].subs, none=sm[sh].n===0;
+      const btn=`display:inline-block;background:var(--g);color:#fff;border-radius:8px;padding:9px 14px;font-weight:600;text-decoration:none`;
+      return `<div class="card" id="shcard${sh}"><h2>Shift ${sh} – ${sm[sh].subs} of ${TRADES.length} trades submitted</h2>
+        <div class="card" style="background:var(--g2);margin-bottom:10px"><h2 style="font-size:15px">📦 Supplier slip – Shift ${sh}</h2>
+          <div class="kpi"><div>Trainees<b>${sm[sh].n}</b></div><div>Milk (L)<b>${fmt(sm[sh].milk)}</b></div><div>${esc(sm.item)}<b>${fmt(sm[sh].item)}</b></div></div>
+          <pre style="background:#fff;padding:10px;border-radius:8px;white-space:pre-wrap;margin:0 0 8px">${esc(st)}</pre>
+          ${pend>0&&!none?`<div class="msg err noprint">⚠ ${pend} trade(s) have not entered Shift ${sh} yet – the slip total may rise.</div>`:""}
+          ${none?`<div class="msg err noprint">No Shift ${sh} entries yet – nothing to send.</div>`:`<p class="noprint" style="margin:0"><a href="https://wa.me/${esc(phoneFor(sh))}?text=${encodeURIComponent(st)}" target="_blank" rel="noopener" data-wa="${sh}" style="${btn}">📲 Send Shift ${sh} to supplier on WhatsApp</a> <button class="sec" data-cps="${sh}">Copy</button> <button class="sec" data-prs="${sh}">🖨 Print Shift ${sh} slip</button></p>`}
+        </div>
+        ${tbl("dash"+sh,["Trade","Trainees","Milk (L)",sm.item,"Remarks"],rows,{num:[1,2,3]})}</div>`};
     $("#dBody").innerHTML=`
-      <div class="card"><h2>Supplier slip – ${dmy(date)}</h2>
+      <div class="card"><h2>Supplier slip – ${dmy(date)} (whole day, both shifts)</h2>
         <div class="kpi"><div>Trainees<b>${sm.n}</b></div><div>Milk (L)<b>${fmt(sm.milk)}</b></div><div>${esc(sm.item)}<b>${fmt(sm.itemQty)}</b></div></div>
         <pre style="background:#f3f4f6;padding:10px;border-radius:8px;white-space:pre-wrap">${esc(slip)}</pre>
-        <p class="noprint"><a id="wa" href="https://wa.me/${esc(S.supplierPhone)}?text=${encodeURIComponent(slip)}" target="_blank" rel="noopener" style="display:inline-block;background:var(--g);color:#fff;border-radius:8px;padding:9px 14px;font-weight:600;text-decoration:none">📲 Send to supplier on WhatsApp</a> <button class="sec" id="cp">Copy</button> <button class="sec" onclick="window.print()">🖨 Print</button></p></div>
+        <p class="noprint"><a id="wa" href="https://wa.me/${esc(S.supplierPhone)}?text=${encodeURIComponent(slip)}" target="_blank" rel="noopener" style="display:inline-block;background:var(--g);color:#fff;border-radius:8px;padding:9px 14px;font-weight:600;text-decoration:none">📲 Send whole day to supplier on WhatsApp</a> <button class="sec" id="cp">Copy</button> <button class="sec" id="prAll">🖨 Print</button></p></div>
       ${sec("1")}${sec("2")}`;
     $("#cp").onclick=()=>navigator.clipboard?.writeText(slip).then(()=>($("#cp").textContent="Copied ✔"));
+    $("#prAll").onclick=()=>window.print();
+    ["1","2"].forEach(sh=>{
+      const cp=document.querySelector(`[data-cps="${sh}"]`), pr=document.querySelector(`[data-prs="${sh}"]`);
+      if(cp)cp.onclick=()=>navigator.clipboard?.writeText(slipShiftText(date,sm,sh)).then(()=>(cp.textContent="Copied ✔"));
+      if(pr)pr.onclick=()=>{const c=$("#shcard"+sh);c.classList.add("prsel");document.body.classList.add("prone");
+        try{window.print()}finally{setTimeout(()=>{c.classList.remove("prsel");document.body.classList.remove("prone")},500)}};
+    });
   };
   $("#dDate").onchange=load; load();
 }
