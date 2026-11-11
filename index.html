@@ -180,6 +180,8 @@ async function initDB(){
       async putLog(l){const d=get();d.logs=d.logs||{};if(d.logs[l.id])throw new Error("already completed");d.logs[l.id]=l;put(d)},
       async getLogs(a,b){return Object.values(get().logs||{}).filter(l=>l.date>=a&&l.date<=b)},
       async isStaff(){return true},async listStaff(){return []},async addStaff(){},async removeStaff(){},
+      async delEntry(id){const d=get();delete d.entries[id];put(d)},
+      async delDaily(date){const d=get();delete d.daily[date];put(d)},
       async addAudit(a){const d=get();d.audit=d.audit||{};d.audit[a.id]=a;put(d)},
       async getAudit(a,b){return Object.values(get().audit||{}).filter(x=>x.day>=a&&x.day<=b)}
     };
@@ -206,6 +208,8 @@ async function initDB(){
     async listStaff(){return (await F.getDocs(F.query(F.collection(fs,"staff")))).docs.map(d=>d.data())},
     async addStaff(p){await F.setDoc(F.doc(fs,"staff",p.email),p)},
     async removeStaff(email){await F.deleteDoc(F.doc(fs,"staff",email))},
+    async delEntry(id){await F.deleteDoc(F.doc(fs,"entries",id))},
+    async delDaily(date){await F.deleteDoc(F.doc(fs,"daily",date))},
     async addAudit(a){await F.setDoc(F.doc(fs,"audit",a.id),a)},
     async getAudit(a,b){const q=F.query(F.collection(fs,"audit"),F.where("day",">=",a),F.where("day","<=",b));return (await F.getDocs(q)).docs.map(d=>d.data())}
   };
@@ -595,6 +599,9 @@ async function vSettings(){
      <p class="muted">Anyone can sign in with Google as a normal <b>Instructor</b> (Entry, Status, Distribution – with the time limit). E-mails listed here become <b>approved staff</b> with the full office facilities (Dashboard, Reports, Settings, no time limit, staff list). The office admins are always allowed.</p>
      <div class="row"><div><label>Gmail address</label><input id="stMail" type="email" placeholder="name@gmail.com"></div><div><label>Name / trade (optional)</label><input id="stName" placeholder="e.g. COPA – Dinoj"></div></div>
      <p><button id="stAdd">Add</button></p><div id="stMsg"></div><div id="stList"></div></div>`}
+   ${(DEMO||isAdminUser)?`<div class="card"><h2>🧪 Sample data for testing</h2>
+     <p class="muted">Adds a week of made-up counts (last 7 days, Sundays skipped, all trades, both shifts, a few late and edited entries) so you can try the Dashboard, Reports and Distribution. Existing real entries are never overwritten. Sample entries are tagged and can be removed with one button.${DEMO?"":" (Removing needs the office admin account.)"}</p>
+     <p><button id="smAdd">Add sample week</button> <button class="warn" id="smDel">Remove sample data</button></p><div id="smMsg"></div></div>`:""}
    ${DEMO?`<div class="card"><h2>Demo data</h2><p class="muted">Demo mode stores data only in this browser.</p><button class="warn" id="sClr">Clear demo data</button></div>`:""}`;
   $("#sSave").onclick=async()=>{
     const n={inst:$("#sInst").value,milkPerHead:+$("#sMilk").value,itemPerHead:+$("#sItem").value,cutoff1:$("#sC1").value,cutoff2:$("#sC2").value,
@@ -614,6 +621,47 @@ async function vSettings(){
     n.defaultItem=n.defaultItem.trim();
     await DB.saveSettings(n); await audit("settings",`Settings saved (milk ${n.milkPerHead} L, item ${n.itemPerHead}, cut-offs ${n.cutoff1}/${n.cutoff2})`); S=n; TRADES=parseTrades(S.trades); $("#sMsg").innerHTML=`<div class="msg ok">Saved ✔</div>`+(lost.length?`<div class="msg err">⚠ These rotation trade codes are no longer in the trade list, so their batches will not get notifications: ${lost.map(esc).join(", ")}</div>`:"");
   };
+  if($("#smAdd")){
+    const hash=x=>[...x].reduce((a,c)=>(a*31+c.charCodeAt(0))>>>0,7);
+    $("#smAdd").onclick=async()=>{
+      $("#smAdd").disabled=true; $("#smMsg").innerHTML=`<div class="msg info">Adding… please wait.</div>`;
+      try{
+        const days=[];for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);if(d.getDay()!==0)days.push(ymd(d))}
+        const have=new Set((await DB.getEntries(days[0],days[days.length-1])).map(e=>e.id));
+        const items=S.items.split(",").map(x=>x.trim()).filter(Boolean), jobs=[];
+        days.forEach((d,di)=>{
+          jobs.push(()=>DB.setDaily(d,{item:items[di%items.length],test:true}));
+          TRADES.forEach(t=>{
+            const base=8+hash(t.id)%24;
+            ["1","2"].forEach(sh=>{
+              const h=hash(t.id+d+sh); if(sh==="2"&&hash(t.id)%2===0)return;   // about half the trades run a 2nd shift
+              if(h%10===0)return;                                               // ~10% not submitted (shows in Missing report)
+              const id=eid(d,sh,t.id); if(have.has(id))return;
+              const count=Math.max(0,base+(h%7)-3), late=h%13===0, edited=h%11===0;
+              jobs.push(()=>DB.putEntry({id,date:d,shift:sh,trade:t.id,count:count,remarks:"",by:"Sample data",at:new Date(d+"T"+(sh==="1"?"09":"13")+":15:00").toISOString(),late,
+                byEmail:"sample.instructor@test",editedByEmail:edited?"sample.office@test":"",editedAt:edited?new Date().toISOString():"",edits:edited?1:0,test:true}));
+            });
+          });
+        });
+        for(let i=0;i<jobs.length;i+=15)await Promise.all(jobs.slice(i,i+15).map(f=>f()));
+        await audit("sample",`Sample data added (${jobs.length} records)`);
+        $("#smMsg").innerHTML=`<div class="msg ok">✔ Added ${jobs.length} sample records for ${days.length} days. Open Dashboard, Reports and Distribution to try them.</div>`;
+      }catch(e){$("#smMsg").innerHTML=`<div class="msg err">Could not add: ${esc(e.message)}</div>`}
+      $("#smAdd").disabled=false;
+    };
+    $("#smDel").onclick=async()=>{
+      const b=$("#smDel"); if(!b.dataset.sure){b.dataset.sure=1;b.textContent="Tap again to remove ALL sample data";setTimeout(()=>{delete b.dataset.sure;b.textContent="Remove sample data"},5000);return}
+      delete b.dataset.sure;b.textContent="Remove sample data";
+      try{
+        const from=ymd(new Date(Date.now()-40*864e5));
+        const es=(await DB.getEntries(from,today())).filter(e=>e.test), ds=(await DB.getDaily(from,today())).filter(d=>d.test);
+        const jobs=[...es.map(e=>()=>DB.delEntry(e.id)),...ds.map(d=>()=>DB.delDaily(d.date))];
+        for(let i=0;i<jobs.length;i+=15)await Promise.all(jobs.slice(i,i+15).map(f=>f()));
+        await audit("sample",`Sample data removed (${jobs.length} records)`);
+        $("#smMsg").innerHTML=`<div class="msg ok">✔ Removed ${jobs.length} sample records. Real entries were not touched.</div>`;
+      }catch(e){$("#smMsg").innerHTML=`<div class="msg err">Could not remove: ${esc(e.message)}</div>`}
+    };
+  }
   if(!DEMO){
     const draw=async()=>{const l=(await DB.listStaff()).sort((a,b)=>a.email.localeCompare(b.email));
       $("#stList").innerHTML=tbl("staff",["E-mail","Name / trade","Remove"],l.map(p=>[p.email,p.name||"",{html:`<button class="sec sm" data-rm="${esc(p.email)}">Remove</button>`}]));
