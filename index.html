@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ITI Nutrition Programme</title>
+<!--
+=====================================================================
+ ITI NUTRITION PROGRAMME  -  single-file app (Firebase + GitHub Pages)
+=====================================================================
+ SETUP (10 minutes)
+ 1. console.firebase.google.com -> Add project -> Build:
+      - Authentication -> Sign-in method -> enable Email/Password
+        (add each instructor under Users, plus the office account)
+      - Firestore Database -> Create (production mode)
+ 2. Project settings -> Your apps -> Web app -> copy the config object
+    and paste it into FIREBASE_CONFIG below.
+ 3. Put the office/admin e-mail(s) in ADMIN_EMAILS below.
+ 4. Firestore -> Rules -> paste (replace the e-mail with the office one):
+
+    rules_version = '2';
+    service cloud.firestore {
+      match /databases/{db}/documents {
+        function admin() { return request.auth != null &&
+          request.auth.token.email in ['office@example.com']; }
+        match /settings/{d} { allow read: if request.auth != null; allow write: if admin(); }
+        match /daily/{d}    { allow read: if request.auth != null; allow write: if admin(); }
+        match /dist/{d}     { allow read, write: if request.auth != null; }
+        match /distlog/{d}  { allow read, create: if request.auth != null; allow delete: if admin(); }
+        match /entries/{d}  { allow read: if request.auth != null;
+                              allow create, update: if request.auth != null; allow delete: if admin(); }
+      }
+    }
+
+ 5. Upload this file as index.html to a GitHub repo -> Settings -> Pages.
+ Until FIREBASE_CONFIG is filled in, the app runs in DEMO MODE
+ (data kept only in this browser) so you can try everything first.
+=====================================================================
+-->
+<style>
+:root{--g:#0b6b4f;--g2:#e6f4ee;--r:#c0392b;--o:#e08a00;--b:#1f2937;--m:#6b7280;--l:#e5e7eb}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--b);background:#f6f7f9}
+header{background:var(--g);color:#fff;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+header h1{font-size:16px;margin:0;flex:1;min-width:180px}
+header small{opacity:.85}
+button,select,input,textarea{font:inherit}
+button{cursor:pointer;border:0;border-radius:8px;padding:9px 14px;background:var(--g);color:#fff;font-weight:600}
+button.sec{background:#fff;color:var(--g);border:1px solid var(--g)}
+button.warn{background:var(--o)}
+button.sm{padding:5px 10px;font-size:13px}
+header button{background:#fff;color:var(--g);padding:6px 10px;font-size:13px}
+nav{display:flex;gap:4px;padding:8px 10px 0;overflow-x:auto;background:#fff;border-bottom:1px solid var(--l);position:sticky;top:0;z-index:5}
+nav button{background:none;color:var(--m);border-radius:8px 8px 0 0;padding:9px 14px;white-space:nowrap}
+nav button.on{color:var(--g);border-bottom:3px solid var(--g)}
+main{max-width:980px;margin:0 auto;padding:14px}
+.card{background:#fff;border:1px solid var(--l);border-radius:12px;padding:14px;margin-bottom:14px}
+.card h2{margin:0 0 10px;font-size:16px}
+label{display:block;font-size:13px;color:var(--m);margin:10px 0 4px}
+input,select,textarea{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff}
+input.big{font-size:32px;text-align:center;font-weight:700;padding:12px}
+.row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1;min-width:130px}
+.seg{display:flex;gap:8px}.seg button{flex:1;background:#fff;color:var(--g);border:1px solid var(--g)}.seg button.on{background:var(--g);color:#fff}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{border:1px solid var(--l);padding:6px 8px;text-align:left}
+th{background:var(--g2);position:sticky;top:0}
+td.n,th.n{text-align:right}
+tr.tot td{font-weight:700;background:var(--g2)}
+.scroll{overflow-x:auto}
+.pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;font-weight:600}
+.ok{background:#d1fae5;color:#065f46}.pend{background:#fee2e2;color:#991b1b}.late{background:#fef3c7;color:#92400e}
+.msg{padding:10px;border-radius:8px;margin:10px 0;font-size:14px}
+.msg.ok{background:#d1fae5}.msg.err{background:#fee2e2}.msg.info{background:#e0f2fe}
+.muted{color:var(--m);font-size:13px}
+.kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px}
+.kpi div{background:var(--g2);border-radius:10px;padding:10px}.kpi b{display:block;font-size:22px}
+.hide{display:none!important}
+.notice{background:#fff3cd;border-bottom:3px solid var(--o);padding:10px 14px;font-size:15px}
+.duty{background:#fff3cd;border:2px solid var(--o)}
+.modalbg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px}
+.modalbox{background:#fff;border-radius:14px;max-width:420px;width:100%;padding:20px;text-align:center;border-top:6px solid var(--o)}
+.modalbox h3{margin:0 0 8px;font-size:20px}
+@media print{header,nav,.noprint,button{display:none!important}body{background:#fff}.card{border:0}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🥛 ITI Dhanuvachapuram – Nutrition Programme <small id="modeTag"></small></h1>
+  <span id="who" class="muted" style="color:#fff"></span>
+  <button id="roleBtn" class="hide"></button>
+  <button id="outBtn" class="hide">Sign out</button>
+</header>
+
+<div id="login" class="hide" style="max-width:380px;margin:40px auto">
+  <div class="card">
+    <h2>Sign in</h2>
+    <p class="muted">Use your Google account. Only staff approved by the office can enter data.</p>
+    <p><button id="lBtn" style="width:100%;background:#fff;color:#1f2937;border:1px solid #cbd5e1;font-size:16px;padding:12px">
+      <svg width="18" height="18" viewBox="0 0 48 48" style="vertical-align:-3px;margin-right:8px"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.1 7.1-17.5z"/><path fill="#FBBC05" d="M10.5 28.7A14.5 14.5 0 0 1 9.5 24c0-1.6.3-3.2.8-4.7l-7.9-6.1A24 24 0 0 0 0 24c0 3.9.9 7.5 2.6 10.8l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.5-5.8c-2.1 1.4-4.9 2.3-8.4 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.9 6.1C6.5 42.6 14.6 48 24 48z"/></svg>Sign in with Google</button></p>
+    <div id="lMsg"></div>
+  </div>
+</div>
+
+<div id="denied" class="hide" style="max-width:420px;margin:40px auto"><div class="card">
+  <h2>Access not granted</h2>
+  <p>You signed in as <b id="dMail"></b>, but this e-mail has not been approved yet.</p>
+  <p>Ask the office to add your e-mail under <b>Settings → Approved staff</b>, then sign in again.</p>
+  <p><button id="dOut" class="sec">Sign out / use another account</button></p></div></div>
+
+<div id="app" class="hide">
+  <nav id="tabs"></nav>
+  <div id="notice" class="notice hide"></div>
+  <main id="view"></main>
+</div>
+
+<script type="module">
+/* ------------------------- CONFIG ------------------------- */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAJ3nX9A8NI1d7GidFZHxhNrwBjOZOryGY",
+  authDomain: "iti-nutrition.firebaseapp.com",
+  projectId: "iti-nutrition",
+  storageBucket: "iti-nutrition.firebasestorage.app",
+  messagingSenderId: "156054782398",
+  appId: "1:156054782398:web:9fd0bbb6b91af7ea7b79ef"
+};
+const ADMIN_EMAILS = ["PUT-OFFICE-EMAIL-HERE"];   // the office login e-mail (same as in the Firestore rules)
+const TEST_MODE = false;         // TESTING: true = no time limit on entry, and MC-B is pretended to be on distribution duty today. Set to false before real use.
+
+const DEFAULT_TRADES = [
+ "WWT|Wood Work Technician","CHNM|Computer Hardware & Network Maintenance","DCIVIL|Draughtsman Civil","D-MECH|Draughtsman Mechanic",
+ "EL|Electrician","MC|Machinist","EM|Electronics Mechanic","FR-AB|Fitter (FR) AB","FR-CD|Fitter (FR) CD","MD|Mechanic Diesel",
+ "MCEA|Mechanic Consumer Electronics & Appliances","MMV|Mechanic Motor Vehicle","COPA|Computer Operator & Programming Assistant",
+ "RACT|Refrigeration & Air Conditioning Technician","TDM|Tool & Die Maker","PL|Plumber","SMW|Sheet Metal Worker","SR|Surveyor",
+ "OAMT|Operator Advanced Machine Tools","TR|Turner","WL-GG|Welder (GMAW & GTAW)","WL|Welder (General)","WM|Wireman"
+].join("\n");
+const DEFAULT_SETTINGS = {
+  inst:"GOVT. ITI DHANUVACHAPURAM", milkPerHead:0.15, itemPerHead:1,
+  cutoff1:"10:30", cutoff2:"14:30", defaultItem:"Bread", items:"Bread,Egg,Banana",
+  supplierPhone:"919995028659", trades:DEFAULT_TRADES
+};
+
+/* Distribution rotation – order exactly as in the supplied list. [batch code, attendance trade id] */
+const ROT=[["EL-A","EL"],["EL-B","EL"],["WL-GG","WL-GG"],["EM","EM"],["SMW-A C","SMW"],["SMW-B D","SMW"],["PL","PL"],["OAMT","OAMT"],["DCIVIL","DCIVIL"],["SR","SR"],["WM-A","WM"],["WM-B","WM"],["WM-C","WM"],["MD","MD"],["MMV","MMV"],["WL-AD","WL"],["WL-BE","WL"],["WL-CF","WL"],["WWT","WWT"],["FR-A","FR-AB"],["FR-B","FR-AB"],["FR-C","FR-CD"],["FR-D","FR-CD"],["TDM","TDM"],["TR-A","TR"],["TR-B","TR"],["MC-A","MC"],["MC-B","MC"],["MC-C","MC"],["CHNM","CHNM"],["COPA","COPA"],["RACT","RACT"],["MCEA-A","MCEA"],["MCEA-B","MCEA"],["D-MECH","D-MECH"]].map(([code,trade])=>({code,trade}));
+const LEGACY={MACH:"MC",DCIV:"DCIVIL",DMEC:"D-MECH"};   // old short codes -> current codes
+const ROTMAP=Object.fromEntries(ROT.map(r=>[r.code,r]));
+// TEST_MODE: pretend MC-B is on duty today and has not distributed yet. Real mode: rotation starts with MC-C on 11/11/2026.
+const defaultQueue=()=>{const i=ROT.findIndex(r=>r.code===(TEST_MODE?"MC-B":"MC-C"));return {order:[...ROT.slice(i),...ROT.slice(0,i)].map(r=>r.code),start:TEST_MODE?"2000-01-01":"2026-11-11",lastDone:"",test:TEST_MODE}};
+const normQ=q=>(q&&!!q.test===TEST_MODE)?q:defaultQueue();
+
+/* ------------------------- helpers ------------------------- */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pad=n=>String(n).padStart(2,"0");
+const ymd=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const today=()=>ymd(new Date());
+const dmy=s=>{const[a,b,c]=s.split("-");return `${c}/${b}/${a}`};
+const fmt=n=>(Math.round(n*100)/100).toString();
+const nowHM=()=>{const d=new Date();return pad(d.getHours())+":"+pad(d.getMinutes())};
+const monthEnd=m=>{const[y,mm]=m.split("-").map(Number);return `${m}-${pad(new Date(y,mm,0).getDate())}`};
+const eachDay=(a,b)=>{const out=[];let d=new Date(a+"T00:00:00");const e=new Date(b+"T00:00:00");while(d<=e){out.push(ymd(d));d.setDate(d.getDate()+1)}return out};
+const ls={get:(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}},set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch{}}};
+
+/* ------------------------- data layer ------------------------- */
+let DB, auth, user=null, isAdminUser=false, officeView=false;
+const DEMO=!FIREBASE_CONFIG;
+
+async function initDB(){
+  if(DEMO){
+    const get=()=>ls.get("nut_demo",{settings:null,entries:{},daily:{},queue:null,logs:{}});
+    const put=v=>ls.set("nut_demo",v);
+    DB={
+      async getSettings(){return {...DEFAULT_SETTINGS,...(get().settings||{})}},
+      async saveSettings(s){const d=get();d.settings=s;put(d)},
+      async getEntries(a,b){return Object.values(get().entries).filter(e=>e.date>=a&&e.date<=b)},
+      async putEntry(e){const d=get();d.entries[e.id]={...(d.entries[e.id]||{}),...e};put(d)},
+      async getDaily(a,b){const d=get().daily;return Object.entries(d).filter(([k])=>k>=a&&k<=b).map(([k,v])=>({date:k,...v}))},
+      async setDaily(date,o){const d=get();d.daily[date]={...(d.daily[date]||{}),...o};put(d)},
+      async getQueue(){return normQ(get().queue)},
+      async saveQueue(q){const d=get();d.queue=q;put(d)},
+      async putLog(l){const d=get();d.logs=d.logs||{};if(d.logs[l.id])throw new Error("already completed");d.logs[l.id]=l;put(d)},
+      async getLogs(a,b){return Object.values(get().logs||{}).filter(l=>l.date>=a&&l.date<=b)},
+      async listStaff(){return []},async addStaff(){},async removeStaff(){}
+    };
+    return;
+  }
+  const base="https://www.gstatic.com/firebasejs/10.12.2/";
+  const [{initializeApp},A,F]=await Promise.all([import(base+"firebase-app.js"),import(base+"firebase-auth.js"),import(base+"firebase-firestore.js")]);
+  const app=initializeApp(FIREBASE_CONFIG);
+  auth=A.getAuth(app);
+  const fs=F.getFirestore(app);
+  window._A=A;
+  DB={
+    async getSettings(){const s=await F.getDoc(F.doc(fs,"settings","main"));return {...DEFAULT_SETTINGS,...(s.exists()?s.data():{})}},
+    async saveSettings(s){await F.setDoc(F.doc(fs,"settings","main"),s)},
+    async getEntries(a,b){const q=F.query(F.collection(fs,"entries"),F.where("date",">=",a),F.where("date","<=",b));return (await F.getDocs(q)).docs.map(d=>d.data())},
+    async putEntry(e){await F.setDoc(F.doc(fs,"entries",e.id),e,{merge:true})},
+    async getDaily(a,b){const q=F.query(F.collection(fs,"daily"),F.where("date",">=",a),F.where("date","<=",b));return (await F.getDocs(q)).docs.map(d=>d.data())},
+    async setDaily(date,o){await F.setDoc(F.doc(fs,"daily",date),{date,...o},{merge:true})},
+    async getQueue(){const s=await F.getDoc(F.doc(fs,"dist","queue"));return normQ(s.exists()?s.data():null)},
+    async saveQueue(q){await F.setDoc(F.doc(fs,"dist","queue"),q)},
+    async putLog(l){await F.setDoc(F.doc(fs,"distlog",l.id),l)},
+    async getLogs(a,b){const q=F.query(F.collection(fs,"distlog"),F.where("date",">=",a),F.where("date","<=",b));return (await F.getDocs(q)).docs.map(d=>d.data())},
+    async listStaff(){return (await F.getDocs(F.query(F.collection(fs,"staff")))).docs.map(d=>d.data())},
+    async addStaff(p){await F.setDoc(F.doc(fs,"staff",p.email),p)},
+    async removeStaff(email){await F.deleteDoc(F.doc(fs,"staff",email))}
+  };
+}
+
+/* ------------------------- state ------------------------- */
+let S=null, TRADES=[], tab="entry";
+const parseTrades=t=>t.split("\n").map(x=>x.trim()).filter(Boolean).map(x=>{const[i,...n]=x.split("|");return {id:i.trim(),name:(n.join("|")||i).trim()}});
+const cutoff=(s,shift)=>shift==="1"?s.cutoff1:s.cutoff2;
+const isAdmin=()=>DEMO?officeView:(isAdminUser&&officeView);
+const eid=(date,shift,trade)=>`${date}_${shift}_${trade}`.replace(/[\/\s]/g,"-");
+const T={};   // tables for CSV
+function tbl(id,head,rows,opts={}){
+  T[id]={head,rows};
+  const h=head.map((x,i)=>`<th class="${opts.num?.includes(i)?"n":""}">${esc(x)}</th>`).join("");
+  const b=rows.map(r=>`<tr class="${r._tot?"tot":""}">${(r.c||r).map((c,i)=>`<td class="${opts.num?.includes(i)?"n":""}">${c?.html??esc(c)}</td>`).join("")}</tr>`).join("");
+  return `<div class="scroll"><table><thead><tr>${h}</tr></thead><tbody>${b||`<tr><td colspan="${head.length}" class="muted">No data</td></tr>`}</tbody></table></div>
+  <p class="noprint"><button class="sec sm" data-csv="${id}">⬇ Download Excel/CSV</button> <button class="sec sm" onclick="window.print()">🖨 Print / PDF</button></p>`;
+}
+document.addEventListener("click",e=>{
+  const id=e.target?.dataset?.csv; if(!id)return;
+  const t=T[id]; const q=v=>`"${String(v?.html?v.html.replace(/<[^>]*>/g,""):v??"").replace(/"/g,'""')}"`;
+  const csv=[t.head,...t.rows.map(r=>r.c||r)].map(r=>r.map(q).join(",")).join("\n");
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["﻿"+csv],{type:"text/csv"}));a.download=`nutrition_${id}_${today()}.csv`;a.click();
+});
+
+/* ------------------------- computing ------------------------- */
+function summarize(entries,dailyMap,date){
+  const out={};
+  for(const sh of ["1","2"]){
+    const es=entries.filter(e=>e.date===date&&e.shift===sh);
+    const n=es.reduce((a,e)=>a+(+e.count||0),0);
+    out[sh]={n,milk:n*S.milkPerHead,item:n*S.itemPerHead,subs:es.length};
+  }
+  out.item=dailyMap[date]?.item||S.defaultItem;
+  out.n=out[1].n+out[2].n; out.milk=out[1].milk+out[2].milk; out.itemQty=out[1].item+out[2].item;
+  return out;
+}
+const dailyMapOf=arr=>Object.fromEntries(arr.map(d=>[d.date,d]));
+function slipText(date,sm){
+  return `${S.inst}\nNUTRITION PROGRAMME – ${dmy(date)}\n\nShift 1: ${sm[1].n} trainees → Milk ${fmt(sm[1].milk)} L, ${sm.item} ${fmt(sm[1].item)}\nShift 2: ${sm[2].n} trainees → Milk ${fmt(sm[2].milk)} L, ${sm.item} ${fmt(sm[2].item)}\n\nTOTAL: ${sm.n} trainees\nMilk: ${fmt(sm.milk)} litres\n${sm.item}: ${fmt(sm.itemQty)} nos`;
+}
+
+/* ------------------------- views ------------------------- */
+const view=()=>$("#view");
+function tabsFor(){
+  const t=[["entry","✏ Today's Entry"]];
+  if(isAdmin()) t.push(["dash","📋 Dashboard & Slip"],["dist","🚚 Distribution"],["reports","📊 Reports"],["settings","⚙ Settings"]);
+  else t.push(["status","👁 Status"],["dist","🚚 Distribution"]);
+  return t;
+}
+function renderTabs(){
+  const t=tabsFor(); if(!t.find(x=>x[0]===tab))tab=t[0][0];
+  const du=duty(), mine=ls.get("nut_last",{}).trade;
+  $("#tabs").innerHTML=t.map(([k,l])=>`<button class="${k===tab?"on":""}" data-tab="${k}">${l}${k==="dist"&&dutyHit(du,mine)?" 🔔":""}</button>`).join("");
+}
+document.addEventListener("click",e=>{const k=e.target?.dataset?.tab;if(k){tab=k;go()}});
+/* ---- distribution queue helpers ---- */
+let Q=null;
+async function loadQ(){
+  try{Q=await DB.getQueue()}
+  catch(e){console.error(e);Q=defaultQueue();Q.error=e.message||String(e)}
+}
+const qWarn=()=>Q?.error?`<div class="msg err">⚠ Distribution data could not be read from Firebase (${esc(Q.error)}). Update the Firestore rules (dist and distlog collections, see the top of this file). Showing the default rotation only; completing a distribution will not be saved.</div>`:"";
+function duty(){ if(!Q||today()<Q.start||Q.lastDone===today())return null; return ROTMAP[Q.order[0]]||null }
+const trName=id=>{id=LEGACY[id]||id;return TRADES.find(t=>t.id===id)?.name||id};
+const DEFNAME=Object.fromEntries(DEFAULT_TRADES.split("\n").map(x=>{const[i,...n]=x.split("|");return [i.trim(),n.join("|").trim().toLowerCase()]}));
+// does attendance trade `id` correspond to duty batch `d`? (by id, or by trade name if the trade list was edited)
+const dutyHit=(d,id)=>!!d&&!!id&&(d.trade===id||String(trName(id)).trim().toLowerCase()===DEFNAME[d.trade]);
+function upHtml(){
+  const d=duty(), rest=d?Q.order.slice(1,6):Q.order.slice(0,5);
+  const today_=d?`<b>${esc(d.code)}</b> (${esc(trName(d.trade))})`:(Q.lastDone===today()?"✔ completed for today":(today()<Q.start?`starts ${dmy(Q.start)}`:"—"));
+  return `<p>Today's duty: ${today_}</p><p>Next 5: ${rest.map(c=>`<span class="pill ok" style="margin:2px" title="${esc(trName(ROTMAP[c]?.trade))}">${esc(c)}</span>`).join(" ")}</p>`;
+}
+async function updateNotice(){
+  await loadQ();
+  const n=$("#notice"), d=duty(), mine=ls.get("nut_last",{}).trade;
+  if(dutyHit(d,mine)){n.innerHTML=`🔔 Today is <b>${esc(trName(d.trade))} – batch ${esc(d.code)}</b>'s distribution day. Open the <b>🚚 Distribution</b> tab and tap Complete when done.`;n.classList.remove("hide")}
+  else n.classList.add("hide");
+}
+async function go(){
+  await updateNotice();
+  renderTabs();
+  view().innerHTML=`<p class="muted">Loading…</p>`;
+  try{ await ({entry:vEntry,status:vStatus,dist:vDist,dash:vDash,reports:vReports,settings:vSettings})[tab]() }
+  catch(err){view().innerHTML=`<div class="msg err">Error: ${esc(err.message)}</div>`;console.error(err)}
+}
+
+/* ---- duty prompt (popup with OK) ---- */
+const promptedKeys=new Set();
+function showDutyPrompt(d){
+  document.querySelector(".modalbg")?.remove();
+  const m=document.createElement("div"); m.className="modalbg";
+  m.innerHTML=`<div class="modalbox"><div style="font-size:42px">🔔</div><h3>Today is your distribution day!</h3>
+    <p><b>${esc(trName(d.trade))} – batch ${esc(d.code)}</b> is on distribution duty today.<br>Please open the <b>🚚 Distribution</b> tab, hand out the items and tap Complete.</p>
+    <button id="mOk" style="width:100%;font-size:18px;padding:12px">OK</button></div>`;
+  document.body.appendChild(m); m.querySelector("#mOk").onclick=()=>m.remove();
+}
+function dutyPrompt(force){
+  const d=duty(), tr=$("#eTrade")?.value;
+  if(!dutyHit(d,tr))return;
+  const k=today()+"_"+tr; if(!force&&promptedKeys.has(k))return;
+  promptedKeys.add(k); showDutyPrompt(d);
+}
+
+/* ---- Entry ---- */
+async function vEntry(){
+  const admin=isAdmin();
+  const last=ls.get("nut_last",{shift:(new Date().getHours()<12?"1":"2"),trade:TRADES[0]?.id,name:""});
+  let date=today();
+  view().innerHTML=`
+  <div class="card">
+    <h2>Enter today's trainee count</h2>
+    ${admin?`<label>Date (office can correct any day)</label><input type="date" id="eDate" value="${date}">`:`<p class="muted">Date: <b>${dmy(date)}</b></p>`}
+    <label>Shift</label>
+    <div class="seg" id="eShift"><button data-s="1">1st Shift</button><button data-s="2">2nd Shift</button></div>
+    <label>Trade / batch</label>
+    <select id="eTrade">${TRADES.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("")}</select>
+    <label>Number of trainees PRESENT today</label>
+    <input id="eCount" class="big" type="number" min="0" step="1" inputmode="numeric" placeholder="0">
+    <label>Remarks (optional – e.g. OJT, holiday)</label><input id="eRem">
+    <label>Your name</label><input id="eName" value="${esc(last.name||user?.displayName||user?.email||"")}">
+    <div id="eDuty"></div>
+    <div id="eNote"></div>
+    <p><button id="eSave" style="width:100%;font-size:18px;padding:14px">Submit</button></p>
+    <div id="eMsg"></div>
+  </div>
+  <div class="card"><h2 id="eStTitle"></h2><div id="eSt"></div></div>
+  <div class="card"><h2>🚚 Upcoming distribution</h2>${upHtml()}</div>`;
+  let shift=last.shift;
+  $("#eTrade").value=TRADES.find(t=>t.id===last.trade)?last.trade:TRADES[0]?.id;
+  const setShift=()=>{document.querySelectorAll("#eShift button").forEach(b=>b.classList.toggle("on",b.dataset.s===shift))};
+  const cur=()=>admin?$("#eDate").value:today();
+  const locked=()=>{ if(admin||TEST_MODE)return false; return nowHM()>cutoff(S,shift) };
+  async function refresh(){
+    setShift();
+    const d=cur(), ents=await DB.getEntries(d,d), mine=ents.find(e=>e.id===eid(d,shift,$("#eTrade").value));
+    $("#eCount").value=mine?mine.count:""; $("#eRem").value=mine?.remarks||"";
+    $("#eNote").innerHTML=locked()?`<div class="msg err">Entry for shift ${shift} closed at ${cutoff(S,shift)}. Please contact the office.</div>`
+      :`<div class="msg info">Entry for shift ${shift} closes at ${cutoff(S,shift)}.${mine?` Already submitted: <b>${mine.count}</b> by <b>${esc(mine.by||"?")}</b> at ${new Date(mine.at).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}. Submitting again will <b>replace</b> it.`:""}</div>`;
+    $("#eSave").disabled=locked();
+    const du=duty();
+    $("#eDuty").innerHTML=qWarn()+(dutyHit(du,$("#eTrade").value)?`<div class="msg duty">🔔 <b>Today is your distribution day!</b><br>${esc(trName(du.trade))} – batch <b>${esc(du.code)}</b> is on distribution duty. Please open the <b>🚚 Distribution</b> tab, hand out the items and tap Complete.</div>`:"")
+      +(TEST_MODE?`<p class="muted" style="font-size:12px">🧪 Test info – mode: ${DEMO?"demo":"firebase"} · selected trade id: <b>${esc($("#eTrade").value)}</b> · duty batch today: <b>${du?esc(du.code)+" ("+esc(du.trade)+")":"none"}</b> · queue front: ${esc(Q?.order?.[0]||"?")} · lastDone: ${esc(Q?.lastDone||"–")} · today: ${today()}</p>`:"");
+    const sub=ents.filter(e=>e.shift===shift);
+    $("#eStTitle").textContent=`Shift ${shift} – submitted ${sub.length} of ${TRADES.length}`;
+    $("#eSt").innerHTML=TRADES.map(t=>{const e=sub.find(x=>x.trade===t.id);return `<span class="pill ${e?"ok":"pend"}" style="margin:2px">${esc(t.id)}${e?" · "+e.count:""}</span>`}).join(" ");
+  }
+  const remember=()=>ls.set("nut_last",{shift,trade:$("#eTrade").value,name:$("#eName").value.trim()});
+  document.querySelectorAll("#eShift button").forEach(b=>b.onclick=()=>{shift=b.dataset.s;remember();refresh()});
+  $("#eTrade").onchange=()=>{remember();refresh();dutyPrompt(true)}; $("#eName").oninput=remember; if(admin)$("#eDate").onchange=refresh;
+  $("#eSave").onclick=async()=>{
+    const c=$("#eCount").value.trim(); if(c===""||!/^\d+$/.test(c)){$("#eMsg").innerHTML=`<div class="msg err">Enter the count as a whole number (0 or more).</div>`;return}
+    if(+c>200){$("#eMsg").innerHTML=`<div class="msg err">${+c} trainees looks too high – please check the number.</div>`;return}
+    const d=cur(), trade=$("#eTrade").value, name=$("#eName").value.trim();
+    if(!name){$("#eMsg").innerHTML=`<div class="msg err">Enter your name.</div>`;return}
+    const prev=(await DB.getEntries(d,d)).find(e=>e.id===eid(d,shift,trade));
+    if(prev&&prev.by&&prev.by.toLowerCase()!==name.toLowerCase()&&+prev.count!==+c&&$("#eSave").dataset.ow!==prev.id){
+      $("#eSave").dataset.ow=prev.id;
+      $("#eMsg").innerHTML=`<div class="msg err">⚠ ${esc(trName(trade))} shift ${shift} was already entered by <b>${esc(prev.by)}</b> (${prev.count} trainees). Tap Submit again to <b>replace</b> it with ${+c}, or ask ${esc(prev.by)} to include your trainees in one total.</div>`;return}
+    delete $("#eSave").dataset.ow;
+    const afterCut=!TEST_MODE&&(d<today()||(d===today()&&nowHM()>cutoff(S,shift)));
+    $("#eSave").disabled=true;
+    try{
+      await DB.putEntry({id:eid(d,shift,trade),date:d,shift,trade,count:+c,remarks:$("#eRem").value.trim(),by:name,at:new Date().toISOString(),late:afterCut});
+      remember();
+      $("#eMsg").innerHTML=`<div class="msg ok">✔ Saved: ${esc(trade)} – shift ${shift} – ${+c} trainees</div>`;
+    }catch(err){$("#eMsg").innerHTML=`<div class="msg err">Could not save: ${esc(err.message)}</div>`}
+    $("#eSave").disabled=false; refresh();
+  };
+  refresh(); dutyPrompt(false);
+}
+
+/* ---- Distribution ---- */
+async function vDist(){
+  await loadQ();
+  const date=today(), admin=isAdmin();
+  const [ents,dl,logs]=await Promise.all([DB.getEntries(date,date),DB.getDaily(date,date),DB.getLogs(date,date)]);
+  const item=dl[0]?.item||S.defaultItem, last=ls.get("nut_last",{}), d0=duty();
+  const rotTrades=TRADES.filter(t=>ROT.some(r=>r.trade===t.id));
+  let selTrade=ls.get("nut_dtrade",null)||last.trade||d0?.trade;
+  if(!rotTrades.find(t=>t.id===selTrade))selTrade=rotTrades[0]?.id;
+  view().innerHTML=`
+  <div class="card"><h2>Distribution rotation</h2>${qWarn()}<div id="dUp">${upHtml()}</div></div>
+  <div class="card"><h2>Distribute</h2>
+    <label>Your trade</label><select id="dTrade">${rotTrades.map(t=>`<option value="${esc(t.id)}" ${t.id===selTrade?"selected":""}>${esc(t.name)}</option>`).join("")}</select>
+    <label>Batch</label><select id="dBatch"></select>
+    <label>Your name</label><input id="dName" value="${esc(last.name||"")}">
+    <div id="dInfo"></div><div id="dList"></div><div id="dMsg"></div>
+  </div>
+  ${admin?`<div class="card noprint"><h2>Office: rotation control</h2>
+    <div class="row"><div><label>Make this batch the duty batch</label><select id="aBatch">${Q.order.map(c=>`<option>${esc(c)}</option>`).join("")}</select></div>
+    <div><label>Rotation starts on</label><input type="date" id="aStart" value="${esc(Q.start)}"></div></div>
+    <p><button class="sec" id="aSave">Apply</button></p><div id="aMsg"></div></div>`:""}`;
+  const batchesOf=tr=>ROT.filter(r=>r.trade===tr).map(r=>r.code).sort((a,b)=>Q.order.indexOf(a)-Q.order.indexOf(b));
+  function fillBatches(){
+    const tr=$("#dTrade").value; ls.set("nut_dtrade",tr);
+    const bs=batchesOf(tr), def=(d0&&d0.trade===tr)?d0.code:bs[0];
+    $("#dBatch").innerHTML=bs.map(c=>`<option value="${esc(c)}" ${c===def?"selected":""}>${esc(c)}${d0&&c===d0.code?"  ★ duty today":""}</option>`).join("");
+    drawList();
+  }
+  function drawList(){
+    const batch=$("#dBatch").value; if(!batch){$("#dList").innerHTML="";return}
+    const key=`nut_tk_${date}_${batch}`, ticked=new Set(ls.get(key,[]));
+    const done=logs.find(l=>l.batch===batch);
+    const by={};ents.forEach(e=>{if(e.count>0)by[e.trade]=(by[e.trade]||0)+e.count});
+    const rows=TRADES.filter(t=>by[t.id]);
+    const waiting=TRADES.filter(t=>!ents.some(e=>e.trade===t.id));
+    let info="";
+    if(done)info=`<div class="msg ok">✔ ${esc(batch)} already completed today by ${esc(done.by)} at ${new Date(done.at).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}.</div>`;
+    else if(d0&&d0.code===batch)info=`<div class="msg ok">★ ${esc(batch)} is today's duty batch.</div>`;
+    else if(d0)info=`<div class="msg info">Today's duty batch is <b>${esc(d0.code)}</b>. If you distribute as <b>${esc(batch)}</b> instead, ${esc(batch)} moves to the end of the rotation and ${esc(d0.code)} stays next in line.</div>`;
+    const blocked=!done&&Q.lastDone===date&&!admin;
+    if(!done&&Q.lastDone===date)info=`<div class="msg info">Today's distribution is already completed${logs[0]?` (${esc(logs[0].batch)})`:""}. ${admin?"Office can still record another batch if needed.":"No other batch needs to distribute today."}</div>`;
+    $("#dInfo").innerHTML=info;
+    const tm=rows.reduce((a,t)=>a+by[t.id],0);
+    $("#dList").innerHTML=`<h3 style="margin:14px 0 6px">Checklist – ${dmy(date)} (${esc(item)})</h3>
+      <div class="scroll"><table><thead><tr><th style="width:44px">✔</th><th>Trade</th><th class="n">Trainees</th><th class="n">Milk (L)</th><th class="n">${esc(item)}</th></tr></thead><tbody>
+      ${rows.map(t=>`<tr><td><input type="checkbox" style="width:22px;height:22px" data-tr="${esc(t.id)}" ${ticked.has(t.id)?"checked":""} ${done||blocked?"disabled":""}></td><td>${esc(t.name)}</td><td class="n">${by[t.id]}</td><td class="n">${fmt(by[t.id]*S.milkPerHead)}</td><td class="n">${fmt(by[t.id]*S.itemPerHead)}</td></tr>`).join("")||`<tr><td colspan="5" class="muted">No attendance entered yet today.</td></tr>`}
+      <tr class="tot"><td></td><td>TOTAL</td><td class="n">${tm}</td><td class="n">${fmt(tm*S.milkPerHead)}</td><td class="n">${fmt(tm*S.itemPerHead)}</td></tr></tbody></table></div>
+      ${waiting.length?`<p class="muted">Attendance not yet entered: ${waiting.map(t=>esc(t.id)).join(", ")}</p>`:""}
+      <p><button class="sec sm" id="dAll" ${done||blocked?"disabled":""}>Tick all</button> <button id="dDone" style="width:100%;font-size:18px;padding:14px;margin-top:8px" ${done||blocked?"disabled":""}>Complete distribution</button></p>`;
+    document.querySelectorAll("[data-tr]").forEach(c=>c.onchange=()=>ls.set(key,[...document.querySelectorAll("[data-tr]")].filter(x=>x.checked).map(x=>x.dataset.tr)));
+    $("#dAll").onclick=()=>{document.querySelectorAll("[data-tr]").forEach(c=>c.checked=true);ls.set(key,rows.map(t=>t.id))};
+    $("#dDone").onclick=()=>{
+      const name=$("#dName").value.trim();
+      if(!name){$("#dMsg").innerHTML=`<div class="msg err">Enter your name.</div>`;return}
+      const un=[...document.querySelectorAll("[data-tr]")].filter(x=>!x.checked).map(x=>x.dataset.tr);
+      if(!un.length){finish(batch,name,[],"",key);return}
+      $("#dMsg").innerHTML=`<div class="msg err"><b>Not ticked:</b> ${un.map(i=>esc(trName(i))).join(", ")}<br>
+        <label>Reason (optional)</label><input id="dReason" placeholder="e.g. trade absent">
+        <label>Type <b>GO</b> to complete anyway</label><input id="dGo" autocomplete="off">
+        <p><button id="dOk" disabled>Confirm &amp; complete</button> <button class="sec" id="dBack">Back</button></p></div>`;
+      $("#dGo").oninput=()=>{$("#dOk").disabled=$("#dGo").value.trim().toUpperCase()!=="GO"};
+      $("#dBack").onclick=()=>{$("#dMsg").innerHTML=""};
+      $("#dOk").onclick=()=>finish(batch,name,un,$("#dReason").value.trim(),key);
+    };
+  }
+  async function finish(batch,name,un,reason,key){
+    $("#dDone")&&($("#dDone").disabled=true);
+    try{
+      await loadQ();
+      const fresh=await DB.getLogs(date,date), prior=fresh.find(l=>l.batch===batch);
+      if(prior){await vDist();$("#dMsg").innerHTML=`<div class="msg info">${esc(batch)} was already completed by ${esc(prior.by)} on another phone. Nothing more to do.</div>`;return}
+      const tickedIds=[...document.querySelectorAll("[data-tr]")].filter(x=>x.checked).map(x=>x.dataset.tr);
+      const dd=duty();
+      await DB.putLog({id:`${date}_${batch}`.replace(/[\/\s]/g,"-"),date,batch,trade:ROTMAP[batch].trade,by:name,at:new Date().toISOString(),ticked:tickedIds,notTicked:un,reason,outOfTurn:!!(dd&&dd.code!==batch)});
+      Q.order=[...Q.order.filter(c=>c!==batch),batch]; Q.lastDone=date; await DB.saveQueue(Q);
+      ls.set("nut_last",{...ls.get("nut_last",{}),name}); try{localStorage.removeItem(key)}catch{}
+      await updateNotice(); renderTabs(); await vDist();
+      $("#dMsg").innerHTML=`<div class="msg ok">✔ Distribution completed for ${esc(batch)}. It is now at the end of the rotation.</div>`;
+    }catch(err){
+      const again=(await DB.getLogs(date,date).catch(()=>[])).find(l=>l.batch===batch);
+      if(again){await vDist();$("#dMsg").innerHTML=`<div class="msg info">${esc(batch)} was already completed by ${esc(again.by)} on another phone.</div>`;return}
+      $("#dMsg").innerHTML=`<div class="msg err">Could not save: ${esc(err.message)}</div>`;$("#dDone")&&($("#dDone").disabled=false)}
+  }
+  $("#dTrade").onchange=fillBatches; $("#dBatch").onchange=drawList;
+  if(admin)$("#aSave").onclick=async()=>{
+    const c=$("#aBatch").value,i=Q.order.indexOf(c);
+    Q.order=[...Q.order.slice(i),...Q.order.slice(0,i)]; Q.start=$("#aStart").value||Q.start; Q.lastDone="";
+    await DB.saveQueue(Q); await updateNotice(); renderTabs(); await vDist(); $("#aMsg").innerHTML=`<div class="msg ok">Saved ✔ Duty batch is now ${esc(c)}.</div>`;
+  };
+  fillBatches();
+}
+
+/* ---- Status (instructor view, read-only) ---- */
+async function vStatus(){
+  const d=today(), ents=await DB.getEntries(d,d);
+  const rows=TRADES.map(t=>{const a=ents.find(e=>e.trade===t.id&&e.shift==="1"),b=ents.find(e=>e.trade===t.id&&e.shift==="2");
+    const p=e=>e?{html:`<span class="pill ok">${e.count}</span>`}:{html:`<span class="pill pend">pending</span>`};return [t.name,p(a),p(b)]});
+  view().innerHTML=`<div class="card"><h2>Today – ${dmy(d)}</h2>${tbl("status",["Trade","Shift 1","Shift 2"],rows)}</div>`;
+}
+
+/* ---- Dashboard & slip ---- */
+async function vDash(){
+  let date=today();
+  view().innerHTML=`<div class="card noprint"><div class="row"><div><label>Date</label><input type="date" id="dDate" value="${date}"></div>
+    <div><label>Item today</label><select id="dItem"></select></div></div></div><div id="dBody"></div>`;
+  const load=async()=>{
+    date=$("#dDate").value;
+    const [ents,dl]=await Promise.all([DB.getEntries(date,date),DB.getDaily(date,date)]);
+    const dm=dailyMapOf(dl), sm=summarize(ents,dm,date);
+    const items=S.items.split(",").map(x=>x.trim()).filter(Boolean);
+    $("#dItem").innerHTML=items.map(i=>`<option ${i===sm.item?"selected":""}>${esc(i)}</option>`).join("");
+    $("#dItem").onchange=async()=>{await DB.setDaily(date,{item:$("#dItem").value});load()};
+    const slip=slipText(date,sm);
+    const sec=sh=>{
+      const rows=TRADES.map(t=>{const e=ents.find(x=>x.trade===t.id&&x.shift===sh);
+        return [t.name,e?e.count:{html:`<span class="pill pend">pending</span>`},e?fmt(e.count*S.milkPerHead):"",e?fmt(e.count*S.itemPerHead):"",
+          e?{html:`${esc(e.remarks||"")}${e.late?` <span class="pill late">late</span>`:""}`}:""]});
+      rows.push({_tot:1,c:["TOTAL",sm[sh].n,fmt(sm[sh].milk),fmt(sm[sh].item),""]});
+      return `<div class="card"><h2>Shift ${sh} – ${sm[sh].subs} of ${TRADES.length} trades submitted</h2>${tbl("dash"+sh,["Trade","Trainees","Milk (L)",sm.item,"Remarks"],rows,{num:[1,2,3]})}</div>`};
+    $("#dBody").innerHTML=`
+      <div class="card"><h2>Supplier slip – ${dmy(date)}</h2>
+        <div class="kpi"><div>Trainees<b>${sm.n}</b></div><div>Milk (L)<b>${fmt(sm.milk)}</b></div><div>${esc(sm.item)}<b>${fmt(sm.itemQty)}</b></div></div>
+        <pre style="background:#f3f4f6;padding:10px;border-radius:8px;white-space:pre-wrap">${esc(slip)}</pre>
+        <p class="noprint"><a id="wa" href="https://wa.me/${esc(S.supplierPhone)}?text=${encodeURIComponent(slip)}" target="_blank" rel="noopener" style="display:inline-block;background:var(--g);color:#fff;border-radius:8px;padding:9px 14px;font-weight:600;text-decoration:none">📲 Send to supplier on WhatsApp</a> <button class="sec" id="cp">Copy</button> <button class="sec" onclick="window.print()">🖨 Print</button></p></div>
+      ${sec("1")}${sec("2")}`;
+    $("#cp").onclick=()=>navigator.clipboard?.writeText(slip).then(()=>($("#cp").textContent="Copied ✔"));
+  };
+  $("#dDate").onchange=load; load();
+}
+
+/* ---- Reports ---- */
+const REPORTS=[["daily","Daily report"],["monthly","Monthly summary"],["trade","Trade-wise"],["missing","Missing & late"],["distlog","Distribution history"]];
+async function vReports(){
+  const rp=ls.get("nut_rp","daily"), m=ls.get("nut_rm",today().slice(0,7));
+  view().innerHTML=`<div class="card noprint"><div class="row"><div><label>Report</label><select id="rType">${REPORTS.map(([k,l])=>`<option value="${k}" ${k===rp?"selected":""}>${l}</option>`).join("")}</select></div>
+    <div id="rDateWrap"><label id="rLbl"></label><input id="rIn"></div></div></div><div id="rBody"></div>`;
+  const setInput=()=>{const k=$("#rType").value,isD=k==="daily";$("#rLbl").textContent=isD?"Date":"Month";
+    const cur=$("#rIn");cur.type=isD?"date":"month";cur.value=isD?today():today().slice(0,7);};
+  async function run(){
+    const k=$("#rType").value, v=$("#rIn").value; ls.set("nut_rp",k); if(k==="daily")ls.set("nut_rd",v);else ls.set("nut_rm",v);
+    const b=$("#rBody");
+    if(k==="daily"){
+      const [ents,dl]=await Promise.all([DB.getEntries(v,v),DB.getDaily(v,v)]),dm=dailyMapOf(dl),sm=summarize(ents,dm,v);
+      const rows=TRADES.map(t=>{const a=ents.find(e=>e.trade===t.id&&e.shift==="1"),c=ents.find(e=>e.trade===t.id&&e.shift==="2");
+        const n1=a?a.count:"–",n2=c?c.count:"–",tot=(a?.count||0)+(c?.count||0);return [t.name,n1,n2,tot,fmt(tot*S.milkPerHead),fmt(tot*S.itemPerHead)]});
+      rows.push({_tot:1,c:["TOTAL",sm[1].n,sm[2].n,sm.n,fmt(sm.milk),fmt(sm.itemQty)]});
+      b.innerHTML=`<div class="card"><h2>Daily report – ${dmy(v)} (${esc(sm.item)})</h2>${tbl("daily",["Trade","Shift 1","Shift 2","Total","Milk (L)",sm.item],rows,{num:[1,2,3,4,5]})}</div>`;
+    }else{
+      const a=v+"-01",z=monthEnd(v);
+      const [ents,dl]=await Promise.all([DB.getEntries(a,z),DB.getDaily(a,z)]),dm=dailyMapOf(dl);
+      const days=[...new Set(ents.map(e=>e.date))].sort();
+      if(k==="monthly"){
+        let tn=0,tm=0,ti=0;
+        const rows=days.map(d=>{const s=summarize(ents,dm,d);tn+=s.n;tm+=s.milk;ti+=s.itemQty;return [dmy(d),s[1].n,s[2].n,s.n,fmt(s.milk),s.item,fmt(s.itemQty)]});
+        const byItem={};days.forEach(d=>{const s=summarize(ents,dm,d);byItem[s.item]=(byItem[s.item]||0)+s.itemQty});
+        rows.push({_tot:1,c:["TOTAL ("+days.length+" days)","","",tn,fmt(tm),Object.entries(byItem).map(([i,q])=>`${i} ${fmt(q)}`).join(", "),fmt(ti)]});
+        b.innerHTML=`<div class="card"><h2>Monthly summary – ${v}</h2>${tbl("monthly",["Date","Shift 1","Shift 2","Total","Milk (L)","Item","Item qty"],rows,{num:[1,2,3,4,6]})}</div>`;
+      }else if(k==="trade"){
+        const rows=TRADES.map(t=>{const es=ents.filter(e=>e.trade===t.id);const tot=es.reduce((x,e)=>x+e.count,0);
+          const dd=new Set(es.map(e=>e.date)).size;return [t.name,dd,tot,dd?fmt(tot/es.length):"–",es.length?Math.max(...es.map(e=>e.count)):"–",fmt(tot*S.milkPerHead)]});
+        b.innerHTML=`<div class="card"><h2>Trade-wise – ${v}</h2><p class="muted">Average = trainees per submission. Compare with strength / attendance register to spot under- or over-reporting.</p>${tbl("trade",["Trade","Days fed","Total trainees","Avg per entry","Max","Milk (L)"],rows,{num:[1,2,3,4,5]})}</div>`;
+      }else if(k==="missing"){
+        const rows=[];
+        for(const d of days)for(const sh of ["1","2"])for(const t of TRADES){
+          const e=ents.find(x=>x.date===d&&x.shift===sh&&x.trade===t.id);
+          if(!e)rows.push([dmy(d),sh,t.name,{html:`<span class="pill pend">missing</span>`},""]);
+          else if(e.late)rows.push([dmy(d),sh,t.name,{html:`<span class="pill late">late</span>`},e.by||""]);
+        }
+        b.innerHTML=`<div class="card"><h2>Missing & late submissions – ${v}</h2><p class="muted">Only days on which at least one entry exists are checked (so holidays are not flagged). Shift 2 missing on a day with no 2nd-shift entries at all usually means no 2nd shift ran.</p>${tbl("missing",["Date","Shift","Trade","Status","By"],rows)}</div>`;
+      }else{
+        const logs=(await DB.getLogs(a,z)).sort((x,y)=>(x.at||"").localeCompare(y.at||""));
+        const rows=logs.map(l=>[dmy(l.date),l.batch,trName(l.trade),l.by||"",new Date(l.at).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),(l.notTicked||[]).map(trName).join(", ")||"–",l.reason||"",l.outOfTurn?"yes":""]);
+        b.innerHTML=`<div class="card"><h2>Distribution history – ${v}</h2>${tbl("distlog",["Date","Batch","Trade","Completed by","Time","Not distributed","Reason","Out of turn"],rows)}</div>`;
+      }
+    }
+  }
+  $("#rType").onchange=()=>{setInput();run()}; $("#rIn").onchange=run; setInput(); run();
+}
+
+/* ---- Settings ---- */
+async function vSettings(){
+  view().innerHTML=`<div class="card"><h2>Settings</h2>
+   <label>Institution name</label><input id="sInst" value="${esc(S.inst)}">
+   <div class="row"><div><label>Milk per trainee (litres)</label><input id="sMilk" type="number" step="0.01" value="${S.milkPerHead}"></div>
+   <div><label>Bread/Egg/Banana per trainee</label><input id="sItem" type="number" step="0.5" value="${S.itemPerHead}"></div></div>
+   <div class="row"><div><label>Shift 1 entry closes at</label><input id="sC1" type="time" value="${S.cutoff1}"></div>
+   <div><label>Shift 2 entry closes at</label><input id="sC2" type="time" value="${S.cutoff2}"></div></div>
+   <div class="row"><div><label>Items (comma separated)</label><input id="sItems" value="${esc(S.items)}"></div>
+   <div><label>Default item</label><input id="sDef" value="${esc(S.defaultItem)}"></div></div>
+   <label>Supplier WhatsApp number (with country code, digits only)</label><input id="sPh" value="${esc(S.supplierPhone)}">
+   <label>Trades / batches – one per line as  CODE|Full name  (add batches like EL-A, EL-B if you feed them separately)</label>
+   <textarea id="sTr" rows="14">${esc(S.trades)}</textarea>
+   <p><button id="sSave">Save settings</button></p><div id="sMsg"></div></div>
+   ${DEMO?"":`<div class="card"><h2>Approved staff</h2>
+     <p class="muted">Only these Google e-mails can sign in and enter data. The office account (set in the app and rules) is always allowed.</p>
+     <div class="row"><div><label>Gmail address</label><input id="stMail" type="email" placeholder="name@gmail.com"></div><div><label>Name / trade (optional)</label><input id="stName" placeholder="e.g. COPA – Dinoj"></div></div>
+     <p><button id="stAdd">Add</button></p><div id="stMsg"></div><div id="stList"></div></div>`}
+   ${DEMO?`<div class="card"><h2>Demo data</h2><p class="muted">Demo mode stores data only in this browser.</p><button class="warn" id="sClr">Clear demo data</button></div>`:""}`;
+  $("#sSave").onclick=async()=>{
+    const n={inst:$("#sInst").value,milkPerHead:+$("#sMilk").value,itemPerHead:+$("#sItem").value,cutoff1:$("#sC1").value,cutoff2:$("#sC2").value,
+      items:$("#sItems").value,defaultItem:$("#sDef").value,supplierPhone:$("#sPh").value.replace(/\D/g,""),trades:$("#sTr").value};
+    const bad=[];
+    if(!(n.milkPerHead>0&&n.milkPerHead<=2))bad.push("Milk per trainee must be between 0 and 2 litres");
+    if(!(n.itemPerHead>0))bad.push("Item per trainee must be more than 0");
+    if(!n.cutoff1||!n.cutoff2)bad.push("Both cut-off times are needed");
+    const its=n.items.split(",").map(x=>x.trim()).filter(Boolean); if(!its.length)bad.push("Enter at least one item");
+    if(!its.includes(n.defaultItem.trim()))bad.push("Default item must be one of the items");
+    if(n.supplierPhone.length<10)bad.push("Supplier number looks too short");
+    const tl=parseTrades(n.trades), ids=tl.map(t=>t.id);
+    if(!tl.length)bad.push("Trade list is empty");
+    const dup=ids.filter((x,i)=>ids.indexOf(x)!==i); if(dup.length)bad.push("Duplicate trade codes: "+[...new Set(dup)].join(", "));
+    const lost=[...new Set(ROT.map(r=>r.trade))].filter(t=>!ids.includes(t));
+    if(bad.length){$("#sMsg").innerHTML=`<div class="msg err">Not saved:<br>• ${bad.map(esc).join("<br>• ")}</div>`;return}
+    n.defaultItem=n.defaultItem.trim();
+    await DB.saveSettings(n); S=n; TRADES=parseTrades(S.trades); $("#sMsg").innerHTML=`<div class="msg ok">Saved ✔</div>`+(lost.length?`<div class="msg err">⚠ These rotation trade codes are no longer in the trade list, so their batches will not get notifications: ${lost.map(esc).join(", ")}</div>`:"");
+  };
+  if(!DEMO){
+    const draw=async()=>{const l=(await DB.listStaff()).sort((a,b)=>a.email.localeCompare(b.email));
+      $("#stList").innerHTML=tbl("staff",["E-mail","Name / trade","Remove"],l.map(p=>[p.email,p.name||"",{html:`<button class="sec sm" data-rm="${esc(p.email)}">Remove</button>`}]));
+      document.querySelectorAll("[data-rm]").forEach(b=>b.onclick=async()=>{if(b.dataset.sure){await DB.removeStaff(b.dataset.rm);draw()}else{b.dataset.sure=1;b.textContent="Tap again";setTimeout(()=>{b.textContent="Remove";delete b.dataset.sure},4000)}})};
+    $("#stAdd").onclick=async()=>{const e=$("#stMail").value.trim().toLowerCase();
+      if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)){$("#stMsg").innerHTML=`<div class="msg err">Enter a valid e-mail.</div>`;return}
+      await DB.addStaff({email:e,name:$("#stName").value.trim(),at:new Date().toISOString()});
+      $("#stMail").value="";$("#stName").value="";$("#stMsg").innerHTML=`<div class="msg ok">Added ${esc(e)} ✔</div>`;draw()};
+    draw().catch(e=>{$("#stList").innerHTML=`<div class="msg err">${esc(e.message)}</div>`});
+  }
+  $("#sClr")&&($("#sClr").onclick=()=>{const b=$("#sClr");if(b.dataset.sure){localStorage.removeItem("nut_demo");location.reload();return}
+    b.dataset.sure=1;b.textContent="Tap again to delete ALL demo data";setTimeout(()=>{delete b.dataset.sure;b.textContent="Clear demo data"},5000)});
+}
+
+/* ------------------------- boot / auth ------------------------- */
+function setRoleBtn(){
+  const b=$("#roleBtn");
+  if(DEMO||isAdminUser){b.classList.remove("hide");b.textContent=officeView?"Switch to Instructor view":"Switch to Office view";
+    b.onclick=()=>{officeView=!officeView;ls.set("nut_office",officeView);setRoleBtn();tab=officeView?"dash":"entry";go()}}
+  else b.classList.add("hide");
+}
+async function start(){
+  S=await DB.getSettings(); S.trades=S.trades.split("\n").map(l=>{const i=l.indexOf("|");const k=l.slice(0,i).trim();return LEGACY[k]?LEGACY[k]+l.slice(i):l}).join("\n"); TRADES=parseTrades(S.trades);
+  $("#login").classList.add("hide"); $("#app").classList.remove("hide");
+  $("#who").textContent=user?.email||"";
+  if(isAdminUser&&!DEMO)officeView=ls.get("nut_office",true); else if(DEMO)officeView=ls.get("nut_office",false);
+  setRoleBtn(); tab=officeView?"dash":"entry"; go();
+}
+(async function boot(){
+  await initDB();
+  // legacy short codes (MACH, DCIV, DMEC) are converted to MC, DCIVIL, D-MECH
+  {const _ge=DB.getEntries.bind(DB);DB.getEntries=async(a,b)=>(await _ge(a,b)).map(e=>LEGACY[e.trade]?{...e,trade:LEGACY[e.trade]}:e);
+   for(const k of ["nut_last","nut_dtrade"]){const v=ls.get(k,null);if(v&&LEGACY[v.trade])ls.set(k,{...v,trade:LEGACY[v.trade]});else if(typeof v==="string"&&LEGACY[v])ls.set(k,LEGACY[v])}}
+  $("#modeTag").textContent=(DEMO?"· DEMO MODE ":"")+(TEST_MODE?"· TEST: time limit OFF":"");
+  if(DEMO){ await start(); return; }
+  const A=window._A;
+  $("#outBtn").classList.remove("hide"); $("#outBtn").onclick=()=>A.signOut(auth);
+  $("#lBtn").onclick=async()=>{
+    $("#lMsg").innerHTML="";
+    const prov=new A.GoogleAuthProvider(); prov.setCustomParameters({prompt:"select_account"});
+    try{await A.signInWithPopup(auth,prov)}
+    catch(e){
+      if(e.code==="auth/popup-blocked"||e.code==="auth/operation-not-supported-in-this-environment"){try{await A.signInWithRedirect(auth,prov);return}catch(e2){e=e2}}
+      if(e.code==="auth/popup-closed-by-user"||e.code==="auth/cancelled-popup-request")return;
+      $("#lMsg").innerHTML=`<div class="msg err">Sign-in failed (${esc(e.code||e.message)}). ${e.code==="auth/unauthorized-domain"?"Add this website's domain under Firebase → Authentication → Settings → Authorized domains.":""}</div>`}
+  };
+  $("#dOut").onclick=()=>A.signOut(auth);
+  A.onAuthStateChanged(auth,async u=>{
+    user=u;
+    $("#denied").classList.add("hide");
+    if(!u){$("#app").classList.add("hide");$("#login").classList.remove("hide");$("#who").textContent="";return}
+    isAdminUser=ADMIN_EMAILS.map(x=>x.toLowerCase()).includes((u.email||"").toLowerCase());
+    try{await start()}
+    catch(e){
+      console.error(e);
+      $("#app").classList.add("hide");$("#login").classList.add("hide");
+      if(/permission|insufficient/i.test(e.message||e.code||"")){$("#dMail").textContent=u.email;$("#denied").classList.remove("hide")}
+      else{$("#login").classList.remove("hide");$("#lMsg").innerHTML=`<div class="msg err">Could not start: ${esc(e.message)}</div>`}
+    }
+  });
+})();
+</script>
+</body>
+</html>

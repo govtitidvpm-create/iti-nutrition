@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    // CHANGE THIS to the office Gmail (same one as ADMIN_EMAILS in index.html)
+    function admin() {
+      return request.auth != null && request.auth.token.email_verified == true &&
+             request.auth.token.email in ['office@example.com'];
+    }
+    // approved staff = listed under Settings -> Approved staff (or the office)
+    function staff() {
+      return admin() || (request.auth != null && request.auth.token.email_verified == true &&
+        exists(/databases/$(db)/documents/staff/$(request.auth.token.email)));
+    }
+
+    match /staff/{d}    { allow read: if staff(); allow write: if admin(); }
+    match /settings/{d} { allow read: if staff(); allow write: if admin(); }
+    match /daily/{d}    { allow read: if staff(); allow write: if admin(); }
+    match /dist/{d}     { allow read, write: if staff(); }
+    match /distlog/{d}  { allow read, create: if staff(); allow update, delete: if admin(); }
+    match /entries/{d}  { allow read, create, update: if staff(); allow delete: if admin(); }
+  }
+}
