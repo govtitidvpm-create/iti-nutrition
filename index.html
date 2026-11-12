@@ -8,33 +8,17 @@
 =====================================================================
  ITI NUTRITION PROGRAMME  -  single-file app (Firebase + GitHub Pages)
 =====================================================================
- SETUP (10 minutes)
- 1. console.firebase.google.com -> Add project -> Build:
-      - Authentication -> Sign-in method -> enable Email/Password
-        (add each instructor under Users, plus the office account)
-      - Firestore Database -> Create (production mode)
- 2. Project settings -> Your apps -> Web app -> copy the config object
-    and paste it into FIREBASE_CONFIG below.
- 3. Put the office/admin e-mail(s) in ADMIN_EMAILS below.
- 4. Firestore -> Rules -> paste (replace the e-mail with the office one):
-
-    rules_version = '2';
-    service cloud.firestore {
-      match /databases/{db}/documents {
-        function admin() { return request.auth != null &&
-          request.auth.token.email in ['office@example.com']; }
-        match /settings/{d} { allow read: if request.auth != null; allow write: if admin(); }
-        match /daily/{d}    { allow read: if request.auth != null; allow write: if admin(); }
-        match /dist/{d}     { allow read, write: if request.auth != null; }
-        match /distlog/{d}  { allow read, create: if request.auth != null; allow delete: if admin(); }
-        match /entries/{d}  { allow read: if request.auth != null;
-                              allow create, update: if request.auth != null; allow delete: if admin(); }
-      }
-    }
-
- 5. Upload this file as index.html to a GitHub repo -> Settings -> Pages.
- Until FIREBASE_CONFIG is filled in, the app runs in DEMO MODE
- (data kept only in this browser) so you can try everything first.
+ Setup:
+  - Firebase: Authentication -> Google sign-in enabled; Firestore created.
+  - Firestore rules: use the separate firestore.rules file (Publish).
+  - FIREBASE_CONFIG and ADMIN_EMAILS are set in the script below.
+    The admin e-mails must also be listed in firestore.rules.
+  - Authentication -> Settings -> Authorized domains must include the
+    GitHub Pages domain.
+ Access levels: Instructor (any Google account), Approved staff
+ (Settings -> Approved staff) and Office admins (ADMIN_EMAILS).
+ If FIREBASE_CONFIG is empty the app runs in DEMO MODE (data kept only
+ in this browser).
 =====================================================================
 -->
 <style>
@@ -133,7 +117,6 @@ const FIREBASE_CONFIG = {
   appId: "1:156054782398:web:9fd0bbb6b91af7ea7b79ef"
 };
 const ADMIN_EMAILS = ["dinojmkhan@gmail.com","govtitidvpm@gmail.com"];   // office admins (same list as in the Firestore rules). Approved staff get the same facilities.
-const TEST_MODE = false;         // TESTING: true = no time limit on entry, and MC-B is pretended to be on distribution duty today. Set to false before real use.
 
 const DEFAULT_TRADES = [
  "WWT|Wood Work Technician","CHNM|Computer Hardware & Network Maintenance","DCIVIL|Draughtsman Civil","D-MECH|Draughtsman Mechanic",
@@ -152,9 +135,9 @@ const DEFAULT_SETTINGS = {
 const ROT=[["EL-A","EL"],["EL-B","EL"],["WL-GG","WL-GG"],["EM","EM"],["SMW-A C","SMW"],["SMW-B D","SMW"],["PL","PL"],["OAMT","OAMT"],["DCIVIL","DCIVIL"],["SR","SR"],["WM-A","WM"],["WM-B","WM"],["WM-C","WM"],["MD","MD"],["MMV","MMV"],["WL-AD","WL"],["WL-BE","WL"],["WL-CF","WL"],["WWT","WWT"],["FR-A","FR-AB"],["FR-B","FR-AB"],["FR-C","FR-CD"],["FR-D","FR-CD"],["TDM","TDM"],["TR-A","TR"],["TR-B","TR"],["MC-A","MC"],["MC-B","MC"],["MC-C","MC"],["CHNM","CHNM"],["COPA","COPA"],["RACT","RACT"],["MCEA-A","MCEA"],["MCEA-B","MCEA"],["D-MECH","D-MECH"]].map(([code,trade])=>({code,trade}));
 const LEGACY={MACH:"MC",DCIV:"DCIVIL",DMEC:"D-MECH"};   // old short codes -> current codes
 const ROTMAP=Object.fromEntries(ROT.map(r=>[r.code,r]));
-// TEST_MODE: pretend MC-B is on duty today and has not distributed yet. Real mode: rotation starts with MC-C on 11/11/2026.
-const defaultQueue=()=>{const i=ROT.findIndex(r=>r.code===(TEST_MODE?"MC-B":"MC-C"));return {order:[...ROT.slice(i),...ROT.slice(0,i)].map(r=>r.code),start:TEST_MODE?"2000-01-01":"2026-11-11",lastDone:"",test:TEST_MODE}};
-const normQ=q=>(q&&!!q.test===TEST_MODE)?q:defaultQueue();
+// Rotation starts with MC-C on 11/11/2026 (until the office changes it on the Distribution tab).
+const defaultQueue=()=>{const i=ROT.findIndex(r=>r.code==="MC-C");return {order:[...ROT.slice(i),...ROT.slice(0,i)].map(r=>r.code),start:"2026-11-11",lastDone:""}};
+const normQ=q=>(q&&!q.test)?q:defaultQueue();   // a leftover test queue (if any) is ignored
 
 /* ------------------------- helpers ------------------------- */
 const $=s=>document.querySelector(s);
@@ -189,8 +172,6 @@ async function initDB(){
       async putLog(l){const d=get();d.logs=d.logs||{};if(d.logs[l.id])throw new Error("already completed");d.logs[l.id]=l;put(d)},
       async getLogs(a,b){return Object.values(get().logs||{}).filter(l=>l.date>=a&&l.date<=b)},
       async isStaff(){return true},async listStaff(){return []},async addStaff(){},async removeStaff(){},
-      async delEntry(id){const d=get();delete d.entries[id];put(d)},
-      async delDaily(date){const d=get();delete d.daily[date];put(d)},
       async addAudit(a){const d=get();d.audit=d.audit||{};d.audit[a.id]=a;put(d)},
       async getAudit(a,b){return Object.values(get().audit||{}).filter(x=>x.day>=a&&x.day<=b)}
     };
@@ -217,8 +198,6 @@ async function initDB(){
     async listStaff(){return (await F.getDocs(F.query(F.collection(fs,"staff")))).docs.map(d=>d.data())},
     async addStaff(p){await F.setDoc(F.doc(fs,"staff",p.email),p)},
     async removeStaff(email){await F.deleteDoc(F.doc(fs,"staff",email))},
-    async delEntry(id){await F.deleteDoc(F.doc(fs,"entries",id))},
-    async delDaily(date){await F.deleteDoc(F.doc(fs,"daily",date))},
     async addAudit(a){await F.setDoc(F.doc(fs,"audit",a.id),a)},
     async getAudit(a,b){const q=F.query(F.collection(fs,"audit"),F.where("day",">=",a),F.where("day","<=",b));return (await F.getDocs(q)).docs.map(d=>d.data())}
   };
@@ -367,7 +346,7 @@ async function vEntry(){
   $("#eTrade").value=TRADES.find(t=>t.id===last.trade)?last.trade:TRADES[0]?.id;
   const setShift=()=>{document.querySelectorAll("#eShift button").forEach(b=>b.classList.toggle("on",b.dataset.s===shift))};
   const cur=()=>admin?$("#eDate").value:today();
-  const locked=()=>{ if(admin||TEST_MODE)return false; return nowHM()>cutoff(S,shift) };
+  const locked=()=>{ if(admin)return false; return nowHM()>cutoff(S,shift) };
   async function refresh(){
     setShift();
     const d=cur(), ents=await DB.getEntries(d,d), mine=ents.find(e=>e.id===eid(d,shift,$("#eTrade").value));
@@ -383,8 +362,7 @@ async function vEntry(){
                               :`<span style="font-size:26px">⛔</span><span>ATTENDANCE NOT MARKED<small>${esc(trName($("#eTrade").value))} · shift ${shift} – enter the count and tap Submit</small></span>`;
      $("#eSave").className=ok?"btngreen":"btnred"; $("#eSave").textContent=ok?"Update":"Submit";}
     const du=duty();
-    $("#eDuty").innerHTML=qWarn()+(dutyHit(du,$("#eTrade").value)?`<div class="msg duty">🔔 <b>Today is your distribution day!</b><br>${esc(trName(du.trade))} – batch <b>${esc(du.code)}</b> is on distribution duty. Please open the <b>🚚 Distribution</b> tab, hand out the items and tap Complete.</div>`:"")
-      +(TEST_MODE?`<p class="muted" style="font-size:12px">🧪 Test info – mode: ${DEMO?"demo":"firebase"} · selected trade id: <b>${esc($("#eTrade").value)}</b> · duty batch today: <b>${du?esc(du.code)+" ("+esc(du.trade)+")":"none"}</b> · queue front: ${esc(Q?.order?.[0]||"?")} · lastDone: ${esc(Q?.lastDone||"–")} · today: ${today()}</p>`:"");
+    $("#eDuty").innerHTML=qWarn()+(dutyHit(du,$("#eTrade").value)?`<div class="msg duty">🔔 <b>Today is your distribution day!</b><br>${esc(trName(du.trade))} – batch <b>${esc(du.code)}</b> is on distribution duty. Please open the <b>🚚 Distribution</b> tab, hand out the items and tap Complete.</div>`:"");
     const sub=ents.filter(e=>e.shift===shift);
     $("#eStTitle").textContent=`Shift ${shift} – submitted ${sub.length} of ${TRADES.length}`;
     $("#eSt").innerHTML=TRADES.map(t=>{const e=sub.find(x=>x.trade===t.id);return `<span class="pill ${e?"ok":"pend"}" style="margin:2px">${esc(t.id)}${e?" · "+e.count:""}</span>`}).join(" ");
@@ -406,7 +384,7 @@ async function vEntry(){
     delete $("#eSave").dataset.ow;
     const rem=$("#eRem").value.trim();
     if(prev&&+prev.count===+c&&(prev.remarks||"")===rem){$("#eMsg").innerHTML=`<div class="msg info">No change – ${esc(trName(trade))} shift ${shift} is already saved as ${prev.count}.</div>`;return}
-    const afterCut=!TEST_MODE&&(d<today()||(d===today()&&nowHM()>cutoff(S,shift)));
+    const afterCut=d<today()||(d===today()&&nowHM()>cutoff(S,shift));
     $("#eSave").disabled=true;
     try{
       const now=new Date().toISOString();
@@ -639,9 +617,6 @@ async function vSettings(){
      <p class="muted">Anyone can sign in with Google as a normal <b>Instructor</b> (Entry, Status, Distribution – with the time limit). E-mails listed here become <b>approved staff</b> with the full office facilities (Dashboard, Reports, Settings, no time limit, staff list). The office admins are always allowed.</p>
      <div class="row"><div><label>Gmail address</label><input id="stMail" type="email" placeholder="name@gmail.com"></div><div><label>Name / trade (optional)</label><input id="stName" placeholder="e.g. COPA – Dinoj"></div></div>
      <p><button id="stAdd">Add</button></p><div id="stMsg"></div><div id="stList"></div></div>`}
-   ${(DEMO||isAdminUser)?`<div class="card"><h2>🧪 Sample data for testing</h2>
-     <p class="muted">Adds a week of made-up counts (last 7 days, Sundays skipped, all trades, both shifts, a few late and edited entries) so you can try the Dashboard, Reports and Distribution. Existing real entries are never overwritten. Sample entries are tagged and can be removed with one button.${DEMO?"":" (Removing needs the office admin account.)"}</p>
-     <p><button id="smAdd">Add sample week</button> <button class="warn" id="smDel">Remove sample data</button></p><div id="smMsg"></div></div>`:""}
    ${DEMO?`<div class="card"><h2>Demo data</h2><p class="muted">Demo mode stores data only in this browser.</p><button class="warn" id="sClr">Clear demo data</button></div>`:""}`;
   $("#sSave").onclick=async()=>{
     const n={inst:$("#sInst").value,milkPerHead:+$("#sMilk").value,itemPerHead:+$("#sItem").value,cutoff1:$("#sC1").value,cutoff2:$("#sC2").value,
@@ -661,47 +636,6 @@ async function vSettings(){
     n.defaultItem=n.defaultItem.trim();
     await DB.saveSettings(n); await audit("settings",`Settings saved (milk ${n.milkPerHead} L, item ${n.itemPerHead}, cut-offs ${n.cutoff1}/${n.cutoff2})`); S=n; TRADES=parseTrades(S.trades); $("#sMsg").innerHTML=`<div class="msg ok">Saved ✔</div>`+(lost.length?`<div class="msg err">⚠ These rotation trade codes are no longer in the trade list, so their batches will not get notifications: ${lost.map(esc).join(", ")}</div>`:"");
   };
-  if($("#smAdd")){
-    const hash=x=>[...x].reduce((a,c)=>(a*31+c.charCodeAt(0))>>>0,7);
-    $("#smAdd").onclick=async()=>{
-      $("#smAdd").disabled=true; $("#smMsg").innerHTML=`<div class="msg info">Adding… please wait.</div>`;
-      try{
-        const days=[];for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);if(d.getDay()!==0)days.push(ymd(d))}
-        const have=new Set((await DB.getEntries(days[0],days[days.length-1])).map(e=>e.id));
-        const items=S.items.split(",").map(x=>x.trim()).filter(Boolean), jobs=[];
-        days.forEach((d,di)=>{
-          jobs.push(()=>DB.setDaily(d,{item:items[di%items.length],test:true}));
-          TRADES.forEach(t=>{
-            const base=8+hash(t.id)%24;
-            ["1","2"].forEach(sh=>{
-              const h=hash(t.id+d+sh); if(sh==="2"&&hash(t.id)%2===0)return;   // about half the trades run a 2nd shift
-              if(h%10===0)return;                                               // ~10% not submitted (shows in Missing report)
-              const id=eid(d,sh,t.id); if(have.has(id))return;
-              const count=Math.max(0,base+(h%7)-3), late=h%13===0, edited=h%11===0;
-              jobs.push(()=>DB.putEntry({id,date:d,shift:sh,trade:t.id,count:count,remarks:"",by:"Sample data",at:new Date(d+"T"+(sh==="1"?"09":"13")+":15:00").toISOString(),late,
-                byEmail:"sample.instructor@test",editedByEmail:edited?"sample.office@test":"",editedAt:edited?new Date().toISOString():"",edits:edited?1:0,test:true}));
-            });
-          });
-        });
-        for(let i=0;i<jobs.length;i+=15)await Promise.all(jobs.slice(i,i+15).map(f=>f()));
-        await audit("sample",`Sample data added (${jobs.length} records)`);
-        $("#smMsg").innerHTML=`<div class="msg ok">✔ Added ${jobs.length} sample records for ${days.length} days. Open Dashboard, Reports and Distribution to try them.</div>`;
-      }catch(e){$("#smMsg").innerHTML=`<div class="msg err">Could not add: ${esc(e.message)}</div>`}
-      $("#smAdd").disabled=false;
-    };
-    $("#smDel").onclick=async()=>{
-      const b=$("#smDel"); if(!b.dataset.sure){b.dataset.sure=1;b.textContent="Tap again to remove ALL sample data";setTimeout(()=>{delete b.dataset.sure;b.textContent="Remove sample data"},5000);return}
-      delete b.dataset.sure;b.textContent="Remove sample data";
-      try{
-        const from=ymd(new Date(Date.now()-40*864e5));
-        const es=(await DB.getEntries(from,today())).filter(e=>e.test), ds=(await DB.getDaily(from,today())).filter(d=>d.test);
-        const jobs=[...es.map(e=>()=>DB.delEntry(e.id)),...ds.map(d=>()=>DB.delDaily(d.date))];
-        for(let i=0;i<jobs.length;i+=15)await Promise.all(jobs.slice(i,i+15).map(f=>f()));
-        await audit("sample",`Sample data removed (${jobs.length} records)`);
-        $("#smMsg").innerHTML=`<div class="msg ok">✔ Removed ${jobs.length} sample records. Real entries were not touched.</div>`;
-      }catch(e){$("#smMsg").innerHTML=`<div class="msg err">Could not remove: ${esc(e.message)}</div>`}
-    };
-  }
   if(!DEMO){
     const draw=async()=>{const l=(await DB.listStaff()).sort((a,b)=>a.email.localeCompare(b.email));
       $("#stList").innerHTML=tbl("staff",["E-mail","Name / trade","Remove"],l.map(p=>[p.email,p.name||"",{html:`<button class="sec sm" data-rm="${esc(p.email)}">Remove</button>`}]));
@@ -735,7 +669,7 @@ async function start(){
   // legacy short codes (MACH, DCIV, DMEC) are converted to MC, DCIVIL, D-MECH
   {const _ge=DB.getEntries.bind(DB);DB.getEntries=async(a,b)=>(await _ge(a,b)).map(e=>LEGACY[e.trade]?{...e,trade:LEGACY[e.trade]}:e);
    for(const k of ["nut_last","nut_dtrade"]){const v=ls.get(k,null);if(v&&LEGACY[v.trade])ls.set(k,{...v,trade:LEGACY[v.trade]});else if(typeof v==="string"&&LEGACY[v])ls.set(k,LEGACY[v])}}
-  $("#modeTag").textContent=(DEMO?"· DEMO MODE ":"")+(TEST_MODE?"· TEST: time limit OFF":"");
+  $("#modeTag").textContent=DEMO?"· DEMO MODE":"";
   if(DEMO){ await start(); return; }
   const A=window._A;
   $("#outBtn").classList.remove("hide"); $("#outBtn").onclick=()=>A.signOut(auth);
